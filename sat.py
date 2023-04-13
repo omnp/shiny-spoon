@@ -143,7 +143,7 @@ def wrapper(clauses, original_variables):
         clauses = t[1]
         AR = t[2]
         result = set()
-        for v in variables:
+        for v in original_variables:
             for u in [v,-v]:
                 cs = {tuple(sorted((e for e in x if e != -u), key=abs)) for x in clauses if u not in x}
                 t = sat(cs, original_variables, AR)
