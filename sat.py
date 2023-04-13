@@ -20,7 +20,7 @@ def partials(x,full=False):
 
 MaxAll = 0 # This global variable is for collecting a statistic.
 
-def sat(xs):
+def sat(xs, original_variables, AllRejects=None):
     """
     xs is a collection of tuples, sets or lists (must be 3-CNF, all clauses in three or less variables).
     This function iterates through all the
@@ -31,15 +31,19 @@ def sat(xs):
     global MaxAll
     xs = [tuple(sorted(set(x), key=abs)) for x in xs]
     if not all(xs):
-        return False, xs
+        return False, xs, None
     if len(xs) <= 1:
-        return True, xs
+        return True, xs, None
     vs_ = set.union(*(set(x) for x in xs))
-    vs = {abs(e) for e in vs_}
+    vs = {abs(e) for e in vs_}.intersection(original_variables)
     N = max(len(x) for x in xs)
     print('\t', end='')
     All = set(xs)
     Rejects = set()
+    if AllRejects is not None:
+        All, Rejects = AllRejects
+        All = set(All)
+        Rejects = set(Rejects)
     def rec(abc, k=3):
         """
         Recursion (up to depth k) to find conflicts and add clauses.
@@ -126,25 +130,27 @@ def sat(xs):
     rec(set(),k=3)
     print('\t{}'.format(len(All)))
     MaxAll = max(MaxAll, len(All))
-    return () not in xs, xs
+    return () not in xs, xs, (All, Rejects)
 
-def wrapper(clauses):
+def wrapper(clauses, original_variables):
     """
     Tries to generate a valid assignment, given one exists.
     """
     clauses = {tuple(sorted(x,key=abs)) for x in clauses}
     variables = list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
-    t = sat(clauses)
+    t = sat(clauses, original_variables)
     if t[0]:
         clauses = t[1]
+        AR = t[2]
         result = set()
         for v in variables:
             for u in [v,-v]:
                 cs = {tuple(sorted((e for e in x if e != -u), key=abs)) for x in clauses if u not in x}
-                t = sat(cs)
+                t = sat(cs, original_variables, AR)
                 if t[0]:
                     result.add(u)
                     clauses = t[1]
+                    AR = t[2]
                     break
             else:
                 raise BaseException
@@ -237,7 +243,7 @@ def randomize_signs(xs):
     """
     Randomly flips signs maintaining the solutions as they were.
     """
-    variables = list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
+    variables = list(sorted(set.union(*(set(abs(e) for e in x) for x in xs))))
     for v in variables:
         if random.choice((0,1)):
             xs_ = set()
@@ -280,116 +286,3 @@ def randomize(xs):
     xs = {tuple(sorted(x,key=abs)) for x in xs}
     xs = randomize_signs(randomize_names(xs))
     return xs
-
-import sys
-if len(sys.argv) > 1:
-    if len(sys.argv) > 2:
-        import php
-        m,n = sys.argv[1:3]
-        m,n = int(m),int(n)
-        clauses = php.php(m,n)
-        print('PHP:{}x{}'.format(m,n))
-        print(len(clauses))
-        for i in range(512):
-            clauses = randomize(clauses)
-            clauses3 = to3(clauses)
-            clauses3x = clauses3
-            variables = set.union(*({abs(e) for e in x} for x in clauses3))
-            print(len(clauses3x), len(variables))
-            t = wrapper(clauses3x)
-            print(t)
-            print('\r',i, all(any(e in t for e in x) for x in clauses))
-    else:
-        import dimacs
-        filename = sys.argv[1]
-        with open(filename) as file:
-            text = file.read()
-            variables, clauses = dimacs.parse_dimacs(text)
-            clauses = {tuple(sorted(c)) for c in clauses}
-            clauses = randomize(clauses)
-            print(len(clauses), len(variables))
-            print('k', max(len(c) for c in clauses))
-            clauses3 = to3(clauses)
-            clauses3x = clauses3
-            variables_ = set.union(*({abs(e) for e in x} for x in clauses3))
-            print(len(clauses3x), len(variables_))
-            t = wrapper(clauses3x)
-            t = [e for e in t if abs(e) in variables]
-            print(t)
-            print(all(any(e in t for e in x) for x in clauses))
-else:
-    """
-    Some default examples.
-    """
-    n = int(input("Number of variables: "))
-    clauses = generate_assignment(n=n)
-    clauses = generate_full_alt(clauses)
-    clauses = randomize(clauses)
-    variables = set.union(*({abs(e) for e in x} for x in clauses))
-    print(len(clauses), len(variables))
-    print(wrapper(clauses))
-    clauses = {e for e in range(1,10)}
-    clauses = generate_full_alt(clauses,k=3)
-    clauses = to3(clauses)
-    variables = set.union(*({abs(e) for e in x} for x in clauses))
-    print(len(clauses), len(variables))
-    MaxAll = 0
-    t = wrapper(clauses)
-    print(t)
-    n = len(variables)
-    print('MaxAll', MaxAll, n, 2*n + 2*(-1 + n)*n + 4*(-2 + n)*(-1 + n)*n//3)
-    _ = input('Press enter...')
-    clausesx = set()
-    clauses = {(-1,),(-2,),(-3,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(-2,),(-3,),(-4,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(-1,),(-3,),(-4,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(-3,),(-4,),(5,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(5,),(6,),(7,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(6,),(7,),(8,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(8,),(9,),(10,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(9,10,),(11,),(12,),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = {(-1,),(-2,-3),(-5,-8),}
-    clauses = generate_full(clauses)
-    clausesx = clausesx.union(clauses)
-    clauses = clausesx
-    clauses = generate_full(clauses)
-    variables = set.union(*({abs(e) for e in x} for x in clauses))
-    print(len(clauses), len(variables))
-    MaxAll = 0
-    for i in range(1024):
-        print('Instance', i)
-        clauses = randomize(clauses)
-        t = sat(clauses)
-        print(t[0])
-    n = len(variables)
-    print('MaxAll', MaxAll, n, 2*n + 2*(-1 + n)*n + 4*(-2 + n)*(-1 + n)*n//3)
-    _ = input('Press enter...')
-    clauses = generate_assignment(n=n)
-    clauses = generate_full_alt(clauses)
-    variables = set.union(*({abs(e) for e in x} for x in clauses))
-    print(len(clauses), len(variables))
-    clauses = randomize(clauses)
-    MaxAll = 0
-    for i in range(1024):
-        print('Instance', i)
-        clauses = randomize(clauses)
-        t = wrapper(clauses)
-        print(t)
-    n = len(variables)
-    print('MaxAll', MaxAll, n, 2*n + 2*(-1 + n)*n + 4*(-2 + n)*(-1 + n)*n//3)
