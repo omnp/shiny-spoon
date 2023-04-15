@@ -39,6 +39,58 @@ else:
     """
     Some default examples.
     """
+    def generate_instances(n):
+        instance = {()}
+        yield list(instance)
+        instances = [instance]
+        v = 1
+        i = 0
+        for instance in instances:
+            if i > n:
+                break
+            i += 1
+            instance_ = list()
+            for _,x in enumerate(instance):
+                x_ = tuple(sorted(set(x).union({v}),key=abs))
+                y_ = tuple(sorted(set(x).union({-v}),key=abs))
+                instance_.append(x_)
+                instance_.append(y_)
+                v += 1
+            instances.append(instance_)
+            yield instance_
+    for instance in generate_instances(9):
+        print(instance)
+        variables = set()
+        if any(instance):
+            variables = set.union(*({abs(e) for e in x} for x in instance))
+            instance = sat.to3(set(instance))
+        print(len(instance), len(variables))
+        print(sat.sat(instance, variables, p=False)[0])
+    
+    for i in range(1,5):
+        print('i', i)
+        variables = set(range(1,i+1))
+        clauses = sat.generate_full_alt(variables, k=i, full=True)
+        clauses = list(sat.to3(clauses))
+        print(len(clauses), len(variables))
+        """
+        print('{} instances to check'.format(2**len(clauses)))
+        print('\t', end='')
+        for k,p in enumerate(sat.partials(range(1,len(clauses)+1))):
+            print('\r\t{}'.format(k), end='')
+            clauses_ = [x for i,x in enumerate(clauses) if (p[i] > 0)]
+            if not sat.sat(clauses_, variables,p=False)[0]:
+                print()
+                print(p)
+                print(clauses_)
+        print()
+        """
+        for i,x in enumerate(clauses):
+            clauses_ = set(clauses).difference({x})
+            if not sat.sat(clauses_, variables, p=False)[0]:
+                clauses = clauses_
+        print(clauses)
+        print(len(clauses))
     n = int(input("Number of variables: "))
     clauses = sat.generate_assignment(n=n)
     clauses = sat.generate_full_alt(clauses)
