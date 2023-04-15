@@ -1,19 +1,22 @@
+import re
+
 def parse_dimacs(text):
 	variables = set()
 	clauses = set()
 	m = 0
 	i = 0
 	for line in text.split('\n'):
+		line = line.strip()
 		if line:
 			if line[0] == 'c':
 				print(line)
 				continue
 			elif line[0] == 'p':
 				print(line)
-				items = line.split(' ')
-				m = int(items[3])
+				items = re.split('\s+', line)
+				m = int(items[3].strip())
 			else:
-				items = [int(x) for x in line.split(' ')]
+				items = [int(x.strip()) for x in re.split('\s+', line)]
 				clause = tuple(items[:-1])
 				if items[-1] != 0:
 					raise ValueError("dimacs ParseError: unexpected token")
@@ -24,4 +27,3 @@ def parse_dimacs(text):
 	if i != m:
 		raise ValueError("dimacs ParseError: unexpected number of clauses")
 	return variables, clauses
-
