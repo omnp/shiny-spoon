@@ -20,7 +20,7 @@ def partials(x,full=False):
 
 MaxAll = 0 # This global variable is for collecting a statistic.
 
-def sat(xs, original_variables, AllRejects=None):
+def sat(xs, original_variables, AllRejects=None, p=True):
     """
     xs is a collection of tuples, sets or lists (must be 3-CNF, all clauses in three or less variables).
     This function iterates through all the
@@ -37,7 +37,7 @@ def sat(xs, original_variables, AllRejects=None):
     vs_ = set.union(*(set(x) for x in xs))
     vs = {abs(e) for e in vs_}.intersection(original_variables)
     N = max(len(x) for x in xs)
-    print('\t', end='')
+    if p: print('\t', end='')
     All = set(xs)
     Rejects = set()
     if AllRejects is not None:
@@ -53,13 +53,13 @@ def sat(xs, original_variables, AllRejects=None):
             m = max(abc)
         for a in {a for a in vs if a >= m}:
             abc_ = abc.union({a})
-            print('\r',*('\t{:4}'.format(e) for e in sorted(abc_)), end='')    
+            if p: print('\r',*('\t{:4}'.format(e) for e in sorted(abc_)), end='')    
             s = 0
             w = set()
             if sum(1 if any(abs(e) in abc_ for e in x) else 0 for x in xs) <= 1:
                 continue
             for fgh in partials(abc_,full=True):
-                print('\r',*('\t{:4}'.format(e) for e in fgh), end='')
+                if p: print('\r',*('\t{:4}'.format(e) for e in fgh), end='')
                 if any(all(e in fgh for e in x) for x in Rejects):
                     s += 1
                     continue
@@ -128,7 +128,7 @@ def sat(xs, original_variables, AllRejects=None):
                 abc_ = abc.union({a})
                 rec(abc_, k-1)
     rec(set(),k=3)
-    print('\t{}'.format(len(All)))
+    if p: print('\t{}'.format(len(All)))
     MaxAll = max(MaxAll, len(All))
     return () not in xs, xs, (All, Rejects)
 
