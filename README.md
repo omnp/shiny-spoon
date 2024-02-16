@@ -1,6 +1,6 @@
 # shiny-spoon
-3-CNF-SAT partial solver
+3-CNF-SAT (toy) solver
 
-Find conflicts and add clauses + lines to generate instances and more lines to read dimacs files.
+Uses a heuristic to try and find a satisfying assignment.
 
 The repository name was a GitHub suggestion.
