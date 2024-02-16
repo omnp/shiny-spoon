@@ -18,141 +18,56 @@ def partials(x,full=False):
             j += 1
         yield tuple(sorted(z,key=abs))
 
-MaxAll = 0 # This global variable is for collecting a statistic.
+def sat(xs):
+    def rec(a = set(), p=0.0):
+        xs_ = set(xs)
+        while True:
+            xs_ = {tuple(e for e in x if -e not in a) for x in xs_ if not any(e in a for e in x)}
+            if not xs_:
+                return True
+            if not all(xs_):
+                return False
+            literals = set.union(*({e for e in x} for x in xs_))
+            notneg = [v for v in literals if -v not in literals]
+            a = a.union(set(notneg))
+            if not notneg:
+                break
+        r = {v: sum(1 if v in x else 0 for x in xs)/len(xs_) for v in sorted(literals)}
+        e = max(sorted(r,key=abs),key=lambda e:r[e])
+        g = r[e]
+        h = r[-e] if -e in r else None
+        print(len(xs_), e, g, g*len(xs_)/len(xs),p)
+        del xs_
+        del literals
+        del r
+        if g > p:
+            if rec(a.union({e}),g):
+                return True
+        if h is not None and h > p:
+            return rec(a.union({-e}),h)
+        return False
+    return rec()
 
-def sat(xs, original_variables, AllRejects=None, p=True):
-    """
-    xs is a collection of tuples, sets or lists (must be 3-CNF, all clauses in three or less variables).
-    This function iterates through all the
-        (n choose 3) * 2**3 + (n choose 2) * 2**2 + (n choose 1) * 2**1
-    number of combinations of possible assignments of at most 3 variables at a time
-    and learns clauses from conflicts (resolutions to the empty clause).
-    """
-    global MaxAll
-    xs = [tuple(sorted(set(x), key=abs)) for x in xs]
-    if not all(xs):
-        return False, xs, None
-    if len(xs) <= 1:
-        return True, xs, None
-    vs_ = set.union(*(set(x) for x in xs))
-    vs = {abs(e) for e in vs_}.intersection(original_variables)
-    N = max(len(x) for x in xs)
-    if p: print('\t', end='')
-    All = set(xs)
-    Rejects = set()
-    if AllRejects is not None:
-        All, Rejects = AllRejects
-        All = set(All)
-        Rejects = set(Rejects)
-    def rec(abc, k=3):
-        """
-        Recursion (up to depth k) to find conflicts and add clauses.
-        """
-        m = 0
-        if abc:
-            m = max(abc)
-        for a in {a for a in vs if a >= m}:
-            abc_ = abc.union({a})
-            if p: print('\r',*('\t{:4}'.format(e) for e in sorted(abc_)), end='')    
-            s = 0
-            w = set()
-            if sum(1 if any(abs(e) in abc_ for e in x) else 0 for x in xs) <= 1:
-                continue
-            for fgh in partials(abc_,full=True):
-                if p: print('\r',*('\t{:4}'.format(e) for e in fgh), end='')
-                if any(all(e in fgh for e in x) for x in Rejects):
-                    s += 1
-                    continue
-                xs__ = set(xs)
-                xs__ = {tuple(e for e in x if -e not in fgh) for x in xs if not any(e in fgh for e in x)}
-                All__ = set(All)
-                while () not in xs__:
-                    foundany = False
-                    for x in list(xs__):
-                        if len(x) <= N-1:
-                            for y in list(xs__):
-                                if len(y) <= N:
-                                    if sum(1 if -e in x else 0 for e in y) == 1:
-                                        z = set(x).difference({-e for e in y}).union(set(y).difference({-e for e in x}))
-                                        z = tuple(sorted(z,key=abs))
-                                        if len(z) <= N-1:
-                                            if z not in All__:
-                                                xs__.add(z)
-                                                All__.add(z)
-                                                foundany = True
-                                                break
-                    for x in list(xs__):
-                        for y in xs__:
-                            if all(e in x for e in y):
-                                if x != y:
-                                    xs__.remove(x)
-                                    break
-                    if not foundany:
-                        break
-                if () in xs__:
-                    Rejects.add(fgh)
-                    s += 1
-                    t = tuple(sorted((-e for e in fgh),key=abs))
-                    if t not in xs:
-                        xs.append(t)
-                        All.add(t)
-                else:
-                    w.add(fgh)
-            if w:
-                w = set.union(*(set(a) for a in w))
-                w = {e for e in w if -e not in w}
-                for e in w:
-                    if (e,) not in xs:
-                        xs.append((e,))
-            if s == 2**len(abc_):
-                if () not in xs:
-                    xs.append(())
-            for x in list(xs):
-                if len(x) <= N-1:
-                    for y in list(xs):
-                        if sum(1 if -e in x else 0 for e in y) == 1:
-                            z = set(x).difference({-e for e in y}).union(set(y).difference({-e for e in x}))
-                            z = tuple(sorted(z,key=abs))
-                            if len(z) <= N-1:
-                                if z not in All:
-                                    xs.append(z)
-                                    All.add(z)
-            for x in list(xs):
-                for y in xs:
-                    if all(e in x for e in y):
-                        if x != y:
-                            xs.remove(x)
-                            break
-        if () not in xs and k > 1:
-            for a in {a for a in vs if a >= m}:
-                abc_ = abc.union({a})
-                rec(abc_, k-1)
-    rec(set(),k=3)
-    if p: print('\t{}'.format(len(All)))
-    MaxAll = max(MaxAll, len(All))
-    return () not in xs, xs, (All, Rejects)
-
-def wrapper(clauses, original_variables):
+def wrapper(xs):
     """
     Tries to generate a valid assignment, given one exists.
     """
-    clauses = {tuple(sorted(x,key=abs)) for x in clauses}
+    xs = {tuple(sorted(x,key=abs)) for x in xs}
+    clauses = set(xs)
     variables = list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
-    t = sat(clauses, original_variables)
-    if t[0]:
-        clauses = t[1]
-        AR = t[2]
+    t = sat(clauses)
+    if t:
         result = set()
-        for v in original_variables:
+        for v in variables:
             for u in [v,-v]:
                 cs = {tuple(sorted((e for e in x if e != -u), key=abs)) for x in clauses if u not in x}
-                t = sat(cs, original_variables, AR)
-                if t[0]:
+                t = sat(cs)
+                if t:
+                    clauses = cs
                     result.add(u)
-                    clauses = t[1]
-                    AR = t[2]
                     break
             else:
+                print(xs)
                 raise BaseException
         return result
     return set()
@@ -202,7 +117,18 @@ def generate_assignment(n):
             r[i] = -e
     return set(r)
 
-def generate_full(xs, k=3):
+def generate_assignment_from_set(vs):
+    """
+    vs = variables
+    Generates a random assignment (a set of literals).
+    """
+    r = list(vs)
+    for i,e in enumerate(r):
+        if random.choice((True,False)):
+            r[i] = -e
+    return set(r)
+
+def generate_full(xs, j=2, k=3, exact=True, full=True):
     """
     xs is the set of clauses defining the solutions
     Generates a set of clauses containing the given clauses as a solution (which may be empty).
@@ -217,10 +143,13 @@ def generate_full(xs, k=3):
                         y = set(x).union({e})
                         y = tuple(sorted(y,key=abs))
                         if y not in xs:
-                            xs.append(y)
-    return {x for x in xs if len(x) == k}
+                            if full or len({z for z in xs if {abs(f) for f in z} == {abs(f) for f in y}}) < 2**len(y)-1:
+                                xs.append(y)
+    if exact:
+        return {x for x in xs if j <= len(x) <= k}
+    return {x for x in xs if len(x) <= k}
 
-def generate_full_alt(a, k=3, full=False):
+def generate_full_alt(a, j=2, k=3, full=False):
     """
     a is an assignment
     Generates a set of clauses given an assignment (set of literals).
@@ -237,7 +166,7 @@ def generate_full_alt(a, k=3, full=False):
                         if y not in xs:
                             if full or not all(-e in a for e in y):
                                 xs.append(y)
-    return {x for x in xs if len(x) == k}
+    return {x for x in xs if j <= len(x) <= k}
 
 def randomize_signs(xs):
     """
