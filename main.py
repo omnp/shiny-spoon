@@ -20,7 +20,6 @@ if len(sys.argv) > 1:
         variables = set.union(*({abs(e) for e in x} for x in clauses3))
         print(len(clauses3), len(variables))
         while True:
-            sat.J = 0
             sat.I = 0
             print(i, ' ', end='')
             clauses3x = sat.randomize(clauses3)
@@ -28,7 +27,7 @@ if len(sys.argv) > 1:
             try:
                 t = sat.sat(clauses3x)
                 #t = sat.sat(clauses3x)
-                print(sat.J, sat.I)
+                print(sat.I)
                 if not t[0]:
                     print(t)
                     #print(clauses3x)
@@ -54,13 +53,12 @@ if len(sys.argv) > 1:
             variables_ = set.union(*({abs(e) for e in x} for x in clauses3x))
             print(len(clauses3x), len(variables_))
             #t = sat.sat(clauses3x)[1]
-            sat.J = 0
             sat.I = 0
             t = sat.wrapper(clauses3x)
             t = [e for e in t if abs(e) in variables]
             print(t)
             print(all(any(e in t for e in x) for x in clauses))
-            print(sat.J, sat.I)
+            print(sat.I)
     exit()
 
 #xs = {(1,2),(-2,-3),(-2,3),(2,-3),(-1,2,3)}
@@ -70,41 +68,66 @@ xs = {(1,-2),(-2,-3),(-2,3),(2,-3),(-1,2,3)}
 xs = {(1,2),(-1,-3),(3,4),(-2,-4)}
 xs = {(1,2),(-1,-3),(3,4),(-2,-4),(-1,-4)}
 xs = {(1,2),(-1,-3),(3,4),(-2,-4),(-1,-4),(-2,-3)}
-sat.J = 0
 sat.I = 0
 s = sat.sat(xs)
 print(*s)
-print(sat.J, sat.I)
-sat.J = 0
+print(sat.I)
 sat.I = 0
 print(sat.wrapper(xs))
-print(sat.J, sat.I)
-exit()
-variables = set(range(1,4))
-xs = sat.generate_full_alt(variables,j=3,k=3,full=True)
+print(sat.I)
+variables = set(range(1,6))
+xs = sat.generate_full_alt(variables,j=3,k=4,full=True)
 r = tuple(random.choice((1,-1)) * v for v in sorted(variables))
-#xs = {x for x in xs if not all(-e in r for e in x)}
+xs = {x for x in xs if not all(-e in r for e in x)}
+print(len(xs),len(variables))
+sat.I = 0
+print(sat.sat(xs)[0])
+print(sat.I)
 xs = sat.to3({x for x in xs if not all(-e in r for e in x)})
 variables_ = set.union(*({abs(e) for e in x} for x in xs))
 print(len(xs),len(variables_))
+sat.I = 0
 print(sat.sat(xs)[0])
+print(sat.I)
+xs_copy = set(xs)
+additional_clauses = sat.generate_full_alt({v for v in variables_.difference(variables)},j=1,k=1,full=True)
+xs = xs.union(additional_clauses)
+r = r + tuple(random.choice((1,-1)) * v for v in sorted(variables_.difference(variables)))
+xs = {x for x in xs if not all(-e in r for e in x)}
+print(len(xs),len(variables_))
+sat.I = 0
+print(sat.sat(xs)[0])
+print(sat.I)
+sat.I = 0
+s = sat.wrapper(xs)
+print(s)
+print(all(any(e in s for e in x) for x in xs))
+print(sat.I)
 clusters = {}
-for x in xs:
+for x in additional_clauses:
     k = tuple(abs(e) for e in x)
-    if k not in clusters:
-        clusters[k] = set()
-    clusters[k].add(x)
-i = 0
-while any(len(v) > 1 for v in clusters.values()):
-    i += 1
-    for k in clusters:
-        if len(clusters[k]) > 1:
-            x = random.choice(list(clusters[k]))
-            clusters[k].remove(x)
-    xs_ = set.union(*clusters.values())
-    variables_ = set.union(*({abs(e) for e in x} for x in xs_))
-    print(len(xs_),len(variables_))
-    xs_ = sat.to3(xs_)
-    variables_ = set.union(*({abs(e) for e in x} for x in xs_))
-    print(len(xs_),len(variables_))
-    print(i, sat.sat(sat.to3(xs_))[0])
+    if all(e in variables_.difference(variables) for e in k):
+        if k not in clusters:
+            clusters[k] = set()
+        clusters[k].add(x)
+xs_additional = set(xs_copy)
+for i,k in enumerate(sorted(sorted(clusters),key=len)):
+    sat.I = 0
+    xs_ = xs_additional.union(clusters[k])
+    t = sat.sat(xs_)[0]
+    print(i,k,t,sat.I)
+    if not t:
+        for x in clusters[k]:
+            xs_ = xs_additional.union(clusters[k].difference({x}))
+            sat.I = 0
+            t = sat.sat(xs_)[0]
+            print(i,k,t,x,sat.I)
+            if t:
+                xs_additional = xs_
+                break
+        else:
+            print(i,k,t,None)
+            break
+    else:
+        xs_additional = xs_
+print(len(xs_additional.difference(xs_copy)))
