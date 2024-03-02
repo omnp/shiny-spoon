@@ -18,23 +18,19 @@ def partials(x,full=False):
             j += 1
         yield tuple(sorted(z,key=abs))
 
-J = 0
 I = 0
 def sat(xs):
     if not xs:
         return True, set()
     if not all(xs):
         return False, None
-    Resolvers = {}
     _xs_ = set(xs)
-    i = 0
     Depth = 0
     def resolve(xs, target, depth=0):
         """
             Recursive procedure for checking unsatisfiability. Whether target can be resolved from the given clauses.
         """
         global I
-        nonlocal Resolvers
         nonlocal Depth
         nonlocal _xs_
         depth += 1
