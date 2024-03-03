@@ -37,7 +37,7 @@ def sat(xs):
         I += 1
         Depth = max(Depth, depth)
         if target in _xs_ or any(all(e in target for e in x) for x in _xs_):
-            print('target (in orig. set)', target, *(x for x in _xs_ if all(e in target for e in x)))
+            #print('target (in orig. set)', target, *(x for x in _xs_ if all(e in target for e in x)))
             return {target}
         else:
             xs = {tuple(e for e in x if -e not in a) for x in _xs_ if not any(e in a for e in x)}
@@ -45,7 +45,7 @@ def sat(xs):
             if xs_:
                 literals = set.union(*(set(x) for x in xs_))
                 nn = {e for e in literals if -e not in literals}
-                literals = literals.difference({e for e in target}).difference({-e for e in target})
+                literals = literals.difference({e for e in target}).difference({-e for e in target}).difference(nn)
                 if not literals:
                     return None
                 e = max(sorted(literals,key=abs),key=lambda e:sum(1 if e in x else 0 for x in xs_))
@@ -63,15 +63,15 @@ def sat(xs):
     r = resolve(target)
     return not(r is not None and () in r), r
 
-def wrapper(xs):
+def wrapper(xs, variables=None):
     """
     Tries to generate a valid assignment, given one exists.
     """
     xs = {tuple(sorted(x,key=abs)) for x in xs}
     clauses = set(xs)
-    variables = list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
     t = sat(clauses)
     if t[0]:
+        variables = variables or list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
         result = set()
         for v in variables:
             for u in [v,-v]:
