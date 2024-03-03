@@ -26,7 +26,7 @@ def sat(xs):
         return False, None
     _xs_ = set(xs)
     Depth = 0
-    def resolve(xs, target, depth=0):
+    def resolve(target, a=set(), depth=0):
         """
             Recursive procedure for checking unsatisfiability. Whether target can be resolved from the given clauses.
         """
@@ -40,25 +40,27 @@ def sat(xs):
             print('target (in orig. set)', target, *(x for x in _xs_ if all(e in target for e in x)))
             return {target}
         else:
+            xs = {tuple(e for e in x if -e not in a) for x in _xs_ if not any(e in a for e in x)}
             xs_ = [x for x in xs if any(sum(1 if -e in x else 0 for e in y) == 1 for y in xs)]
             if xs_:
                 literals = set.union(*(set(x) for x in xs_))
+                nn = {e for e in literals if -e not in literals}
                 literals = literals.difference({e for e in target}).difference({-e for e in target})
                 if not literals:
                     return None
                 e = max(sorted(literals,key=abs),key=lambda e:sum(1 if e in x else 0 for x in xs_))
-                b = tuple(sorted(set(target).union({-e}),key=abs))
-                c = tuple(sorted(set(target).union({e}),key=abs))
+                b = tuple(sorted(set(target).union({e}),key=abs))
+                c = tuple(sorted(set(target).union({-e}),key=abs))
                 u = v = None
-                u = resolve(xs, b, depth)
+                u = resolve(b, a.union({-e}).union(nn), depth)
                 if u is not None:
-                    v = resolve(xs, c, depth)
+                    v = resolve(c, a.union({e}).union(nn), depth)
                 if u is None or v is None:
                     return None
                 return {target}
     target = ()
     Depth = 0
-    r = resolve(xs, target)
+    r = resolve(target)
     return not(r is not None and () in r), r
 
 def wrapper(xs):
