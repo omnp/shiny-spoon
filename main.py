@@ -54,7 +54,7 @@ if len(sys.argv) > 1:
             print(len(clauses3x), len(variables_))
             #t = sat.sat(clauses3x)[1]
             sat.I = 0
-            t = sat.wrapper(clauses3x)
+            t = sat.wrapper(clauses3x, variables)
             t = [e for e in t if abs(e) in variables]
             print(t)
             print(all(any(e in t for e in x) for x in clauses))
@@ -68,12 +68,23 @@ xs = {(1,-2),(-2,-3),(-2,3),(2,-3),(-1,2,3)}
 xs = {(1,2),(-1,-3),(3,4),(-2,-4)}
 xs = {(1,2),(-1,-3),(3,4),(-2,-4),(-1,-4)}
 xs = {(1,2),(-1,-3),(3,4),(-2,-4),(-1,-4),(-2,-3)}
+xs = {(1,2),(-1,2),(1,-2),(-1,-2)}
+xs = {(1,2,3),(-1,2,3),(1,-2,3),(-1,-2,3),(1,2,-3),(-1,2,-3),(1,-2,-3),(-1,-2,-3)}
+n = 6
+variables = set(range(1,n+1))
+xs = sat.generate_full_alt(variables,j=n,k=n,full=True)
+print(len(xs),len(variables))
+#r = tuple(random.choice((1,-1)) * v for v in sorted(variables))
+#xs = {x for x in xs if not all(-e in r for e in x)}
+xs = sat.to3(xs)
+variables_ = set.union(*({abs(e) for e in x} for x in xs))
+print(len(xs),len(variables_))
 sat.I = 0
 s = sat.sat(xs)
 print(*s)
 print(sat.I)
 sat.I = 0
-print(sat.wrapper(xs))
+print(sat.wrapper(xs, variables))
 print(sat.I)
 variables = set(range(1,6))
 xs = sat.generate_full_alt(variables,j=3,k=4,full=True)
