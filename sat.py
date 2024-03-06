@@ -1,4 +1,8 @@
 import random
+from sympy.logic.boolalg import And, Not, Xor, Equivalent
+from sympy.logic.boolalg import to_cnf
+from sympy import symbols
+from sympy import Symbol
 
 def partials(x,full=False):
     """
@@ -18,8 +22,9 @@ def partials(x,full=False):
             j += 1
         yield tuple(sorted(z,key=abs))
 
-I = 0
-def sat(xs):
+J = 0 # Global for holding the number of steps for a given part of the computation.
+I = 0 # Global to hold the total number of recursive steps taken.
+def sat(xs, MaxRecSteps=None):
     if not xs:
         return True, set()
     if not all(xs):
@@ -30,32 +35,40 @@ def sat(xs):
         """
             Recursive procedure for checking unsatisfiability. Whether target can be resolved from the given clauses.
         """
-        global I
+        global J,I
         nonlocal Depth
         nonlocal _xs_
+        nonlocal MaxRecSteps
         depth += 1
         I += 1
+        J += 1
+        if MaxRecSteps is not None and J >= MaxRecSteps:
+            return {target}
         Depth = max(Depth, depth)
         if target in _xs_ or any(all(e in target for e in x) for x in _xs_):
-            #print('target (in orig. set)', target, *(x for x in _xs_ if all(e in target for e in x)))
             return {target}
         else:
             xs = {tuple(e for e in x if -e not in a) for x in _xs_ if not any(e in a for e in x)}
+            if not xs:
+                return None
+            if not all(xs):
+                return {target}
             xs_ = [x for x in xs if any(sum(1 if -e in x else 0 for e in y) == 1 for y in xs)]
             if xs_:
                 literals = set.union(*(set(x) for x in xs_))
                 nn = {e for e in literals if -e not in literals}
-                literals = literals.difference({e for e in target}).difference({-e for e in target}).difference(nn)
+                literals = literals.difference(nn)
                 if not literals:
                     return None
-                e = max(sorted(literals,key=abs),key=lambda e:sum(1 if e in x else 0 for x in xs_))
-                b = tuple(sorted(set(target).union({e}),key=abs))
-                c = tuple(sorted(set(target).union({-e}),key=abs))
+                e = min(sorted(literals,key=abs),key=lambda e:sum(1 if e in x else 0 for x in xs_))
+                b = tuple(sorted(set(target).union({-e}),key=abs))
+                c = tuple(sorted(set(target).union({e}),key=abs))
                 u = v = None
-                u = resolve(b, a.union({-e}).union(nn), depth)
-                if u is not None:
-                    v = resolve(c, a.union({e}).union(nn), depth)
-                if u is None or v is None:
+                u = resolve(b, a.union({e}).union(nn), depth)
+                if u is None:
+                    return None
+                v = resolve(c, a.union({-e}).union(nn), depth)
+                if v is None:
                     return None
                 return {target}
     target = ()
@@ -63,27 +76,147 @@ def sat(xs):
     r = resolve(target)
     return not(r is not None and () in r), r
 
+_sat = sat
+def driver(Xs, t = 6, r = 16):
+    """
+    Applies the above recursive function a number of times in different configurations of clauses.
+    Until an assignment is found or gives up when the set limit for number of steps is hit.
+    """
+    global J
+    if type(Xs) != dict:
+        Xs = {0: Xs}
+    for u,xs in Xs.items():
+        if not xs:
+            return True, u
+    for u,xs in list(Xs.items()):
+        if not all(xs):
+            del Xs[u]
+    if not Xs:
+        return False, None
+    Variables = {}
+    N = {}
+    Symbols = {}
+    M = 0
+    for u,xs in Xs.items():
+        variables = list(sorted(set.union(*(set(abs(e) for e in x) for x in xs))))
+        Variables[u] = variables
+        n = len(variables)
+        N[u] = n
+        sm = symbols(' '.join(str(v) for v in variables))
+        if type(sm) == Symbol:
+            sm = (sm,)
+        Symbols[u] = sm
+        M = max(M,max(variables))
+    n = max(N.values())
+    K = 0
+    while K < r:
+        K += 1
+        """
+        The following section is inspired by the following blog post which explains in some detail
+        the practical application of the Valiant-Vazirani theorem:
+            https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
+
+        All errors and misunderstandings in the following implementation are entirely my own.
+        This code is also the reason why (a part of) the sympy package is now imported and required.
+        """
+        for k in range(0,n+1):
+            for t_ in range(t):
+                for u in Xs:
+                    """
+                    This bit (iterating u's) is an addition where we check both positive and negative literal
+                    one after the other on each step.
+                    """
+                    variables = Variables[u]
+                    sm = Symbols[u]
+                    n = N[u]
+                    """
+                    And back to limiting the number of assignments:
+                    """
+                    vectors = []
+                    bits = []
+                    for i in range(1,k+3):
+                        vector = []
+                        for _ in range(n):
+                            vector.append(random.randint(0,1))
+                        bit = random.randint(0,1)
+                        vectors.append(vector)
+                        bits.append(bit)
+                    aux = list(range(M+1,M+1+n*(k+2)))
+                    sm_aux = symbols(' '.join(str(v) for v in aux))
+                    sm_mapping = {}
+                    for s,i in zip(sm, variables):
+                        sm_mapping[s] = i
+                    for s,i in zip(sm_aux,aux):
+                        sm_mapping[s] = i
+                    expression = True
+                    for i,(vector,bit) in enumerate(zip(vectors,bits)):
+                        exr = None
+                        for j in range(n):
+                            x = sm[j]
+                            y = sm_aux[i*n+j]
+                            a = vector[j] > 0
+                            b = bit > 0
+                            if exr is None:
+                                exr = And(x, a)
+                            else:
+                                exr = Xor(sm_aux[i*n+j-1], Xor(And(a, x), b))
+                            exr = Equivalent(y,exr)
+                            exr = to_cnf(exr)
+                        expression = And(expression,exr)
+                    if expression:
+                        ys = set()
+                        for clause in expression.args:
+                            y = []
+                            if type(clause) == Symbol:
+                                y.append(sm_mapping[clause])
+                            elif type(clause) == Not:
+                                y.append(-sm_mapping[clause.args[0]])
+                            else:
+                                for literal in clause.args:
+                                    if type(literal) == Not:
+                                        y.append(-sm_mapping[literal.args[0]])
+                                    else:
+                                        y.append(sm_mapping[literal])
+                            y = tuple(sorted(y,key=abs))
+                            ys.add(y)
+                        J = 0 # Must remember to reset the counter (global) here.
+                        xs_ = Xs[u].union(ys)
+                        print(f'\rt k', '\t',t_,'\t',k,'\t',K,'\t',2**K,'\t',len(xs_),'\t',len(Xs[u]), end='')
+                        if _sat(xs_, 2**K)[0]:
+                            print()
+                            return True, u
+    print()
+    return False, None
+
+sat = driver
 def wrapper(xs, variables=None):
     """
     Tries to generate a valid assignment, given one exists.
     """
     xs = {tuple(sorted(x,key=abs)) for x in xs}
     clauses = set(xs)
-    t = sat(clauses)
+    t = sat({0: clauses})
     if t[0]:
         variables = variables or list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
         result = set()
         for v in variables:
+            if not any(v in x or -v in x for x in clauses):
+                result.add(v)
+                continue
+            Cs = {}
+            literals = list(sorted(set.union(*(set(e for e in x) for x in clauses)),key=abs))
             for u in [v,-v]:
+                if u in literals:
+                    cs = {tuple(e for e in x if e != -u) for x in clauses if u not in x}
+                    Cs[u] = cs
+            t = sat(Cs)
+            if t[0]:
+                u = t[1]
                 print('v',u)
-                cs = {tuple(e for e in x if e != -u) for x in clauses if u not in x}
-                t = sat(cs)
-                if t[0]:
-                    clauses = cs
-                    result.add(u)
-                    break
+                clauses = Cs[u]
+                result.add(u)
             else:
-                print(clauses)
+                print(Cs)
                 print(v)
                 raise ValueError
         return result
