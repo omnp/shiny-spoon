@@ -1,3 +1,4 @@
+import math
 import random
 from sympy.logic.boolalg import And, Not, Xor, Equivalent
 from sympy.logic.boolalg import to_cnf
@@ -22,7 +23,6 @@ def partials(x,full=False):
             j += 1
         yield tuple(sorted(z,key=abs))
 
-J = 0 # Global for holding the number of steps for a given part of the computation.
 I = 0 # Global to hold the total number of recursive steps taken.
 def sat(xs, MaxRecSteps=None):
     if not xs:
@@ -31,11 +31,13 @@ def sat(xs, MaxRecSteps=None):
         return False, None
     _xs_ = set(xs)
     Depth = 0
+    J = 0
     def resolve(target, a=set(), depth=0):
         """
             Recursive procedure for checking unsatisfiability. Whether target can be resolved from the given clauses.
         """
-        global J,I
+        global I
+        nonlocal J
         nonlocal Depth
         nonlocal _xs_
         nonlocal MaxRecSteps
@@ -77,7 +79,7 @@ def sat(xs, MaxRecSteps=None):
     return not(r is not None and () in r), r
 
 _sat = sat
-def driver(Xs, t = 6, r = 16):
+def driver(Xs, t = 6):
     """
     Applies the above recursive function a number of times in different configurations of clauses.
     Until an assignment is found or gives up when the set limit for number of steps is hit.
@@ -108,83 +110,80 @@ def driver(Xs, t = 6, r = 16):
         Symbols[u] = sm
         M = max(M,max(variables))
     n = max(N.values())
-    K = 0
-    while K < r:
-        K += 1
-        """
-        The following section is inspired by the following blog post which explains in some detail
-        the practical application of the Valiant-Vazirani theorem:
-            https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
+    """
+    The following section is inspired by the following blog post which explains in some detail
+    the practical application of the Valiant-Vazirani theorem:
+        https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
 
-        All errors and misunderstandings in the following implementation are entirely my own.
-        This code is also the reason why (a part of) the sympy package is now imported and required.
-        """
-        for k in range(0,n+1):
-            for t_ in range(t):
-                for u in Xs:
-                    """
-                    This bit (iterating u's) is an addition where we check both positive and negative literal
-                    one after the other on each step.
-                    """
-                    variables = Variables[u]
-                    sm = Symbols[u]
-                    n = N[u]
-                    """
-                    And back to limiting the number of assignments:
-                    """
-                    vectors = []
-                    bits = []
-                    for i in range(1,k+3):
-                        vector = []
-                        for _ in range(n):
-                            vector.append(random.randint(0,1))
-                        bit = random.randint(0,1)
-                        vectors.append(vector)
-                        bits.append(bit)
-                    aux = list(range(M+1,M+1+n*(k+2)))
-                    sm_aux = symbols(' '.join(str(v) for v in aux))
-                    sm_mapping = {}
-                    for s,i in zip(sm, variables):
-                        sm_mapping[s] = i
-                    for s,i in zip(sm_aux,aux):
-                        sm_mapping[s] = i
-                    expression = True
-                    for i,(vector,bit) in enumerate(zip(vectors,bits)):
-                        exr = None
-                        for j in range(n):
-                            x = sm[j]
-                            y = sm_aux[i*n+j]
-                            a = vector[j] > 0
-                            b = bit > 0
-                            if exr is None:
-                                exr = And(x, a)
-                            else:
-                                exr = Xor(sm_aux[i*n+j-1], Xor(And(a, x), b))
-                            exr = Equivalent(y,exr)
-                            exr = to_cnf(exr)
-                        expression = And(expression,exr)
-                    if expression:
-                        ys = set()
-                        for clause in expression.args:
-                            y = []
-                            if type(clause) == Symbol:
-                                y.append(sm_mapping[clause])
-                            elif type(clause) == Not:
-                                y.append(-sm_mapping[clause.args[0]])
-                            else:
-                                for literal in clause.args:
-                                    if type(literal) == Not:
-                                        y.append(-sm_mapping[literal.args[0]])
-                                    else:
-                                        y.append(sm_mapping[literal])
-                            y = tuple(sorted(y,key=abs))
-                            ys.add(y)
-                        J = 0 # Must remember to reset the counter (global) here.
-                        xs_ = Xs[u].union(ys)
-                        print(f'\rt k', '\t',t_,'\t',k,'\t',K,'\t',2**K,'\t',len(xs_),'\t',len(Xs[u]), end='')
-                        if _sat(xs_, 2**K)[0]:
-                            print()
-                            return True, u
+    All errors and misunderstandings in the following implementation are entirely my own.
+    This code is also the reason why (a part of) the sympy package is now imported and required.
+    """
+    for k in range(0,n+1):
+        for t_ in range(t):
+            for u in Xs:
+                """
+                This bit (iterating u's) is an addition where we check both positive and negative literal
+                one after the other on each step.
+                """
+                variables = Variables[u]
+                sm = Symbols[u]
+                n = N[u]
+                """
+                And back to limiting the number of assignments:
+                """
+                vectors = []
+                bits = []
+                for i in range(1,k+3):
+                    vector = []
+                    for _ in range(n):
+                        vector.append(random.randint(0,1))
+                    bit = random.randint(0,1)
+                    vectors.append(vector)
+                    bits.append(bit)
+                aux = list(range(M+1,M+1+n*(k+2)))
+                sm_aux = symbols(' '.join(str(v) for v in aux))
+                sm_mapping = {}
+                for s,i in zip(sm, variables):
+                    sm_mapping[s] = i
+                for s,i in zip(sm_aux,aux):
+                    sm_mapping[s] = i
+                expression = True
+                for i,(vector,bit) in enumerate(zip(vectors,bits)):
+                    exr = None
+                    for j in range(n):
+                        x = sm[j]
+                        y = sm_aux[i*n+j]
+                        a = vector[j] > 0
+                        b = bit > 0
+                        if exr is None:
+                            exr = And(x, a)
+                        else:
+                            exr = Xor(sm_aux[i*n+j-1], Xor(And(a, x), b))
+                        exr = Equivalent(y,exr)
+                    expression = And(expression,exr)
+                expression = to_cnf(expression)
+                if expression:
+                    ys = set()
+                    for clause in expression.args:
+                        y = []
+                        if type(clause) == Symbol:
+                            y.append(sm_mapping[clause])
+                        elif type(clause) == Not:
+                            y.append(-sm_mapping[clause.args[0]])
+                        else:
+                            for literal in clause.args:
+                                if type(literal) == Not:
+                                    y.append(-sm_mapping[literal.args[0]])
+                                else:
+                                    y.append(sm_mapping[literal])
+                        y = tuple(sorted(y,key=abs))
+                        ys.add(y)
+                    xs_ = Xs[u].union(ys)
+                    K = 1 + int(math.log(len(xs_))/math.log(2))
+                    print(f'\rt k', '\t',t_,'\t',k,'\t',K,'\t',2**K,'\t',len(xs_),'\t',len(Xs[u]), end='')
+                    if _sat(xs_, 2**K)[0]:
+                        print()
+                        return True, u
     print()
     return False, None
 
@@ -195,25 +194,21 @@ def wrapper(xs, variables=None):
     """
     xs = {tuple(sorted(x,key=abs)) for x in xs}
     clauses = set(xs)
-    t = sat({0: clauses})
+    t = sat({0: preprocess(clauses)})
     if t[0]:
         variables = variables or list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
         result = set()
-        for v in variables:
-            if not any(v in x or -v in x for x in clauses):
-                result.add(v)
-                continue
+        for v in sorted(variables,key=abs):
             Cs = {}
             literals = list(sorted(set.union(*(set(e for e in x) for x in clauses)),key=abs))
             for u in [v,-v]:
                 if u in literals:
-                    cs = {tuple(e for e in x if e != -u) for x in clauses if u not in x}
-                    Cs[u] = cs
+                    cs = {tuple(e for e in x if -e not in result.union({u})) for x in clauses if not any(e in result.union({u}) for e in x)}
+                    Cs[u] = preprocess(cs)
             t = sat(Cs)
             if t[0]:
                 u = t[1]
                 print('v',u)
-                clauses = Cs[u]
                 result.add(u)
             else:
                 print(Cs)
@@ -221,6 +216,51 @@ def wrapper(xs, variables=None):
                 raise ValueError
         return result
     return set()
+
+def resolve(x,y):
+    if sum(1 if -e in x else 0 for e in y) == 1:
+        z = set(x).difference({-e for e in y}).union(set(y).difference({-e for e in x}))
+        z = tuple(sorted(z,key=abs))
+        return z
+
+def preprocess(xs):
+    """
+    Undo the process of the to3 (tok) function(s).
+    """
+    xs = set(xs)
+    while True:
+        xs_ = set()
+        for x in list(xs):
+            for y in list(xs):
+                if x in xs and y in xs:
+                    z = resolve(x, y)
+                    if z is not None:
+                        for e in set(x).difference(set(z)):
+                            if sum(1 if e in w or -e in w else 0 for w in xs) == 2:
+                                xs.remove(x)
+                                xs.remove(y)
+                                xs_.add(z)
+        xs = xs.union(xs_)
+        if not xs_:
+            break
+    while True:
+        xs_ = set()
+        remove = set()
+        for x in list(xs):
+            for y in list(xs):
+                if x in xs and y in xs:
+                    z = resolve(x, y)
+                    if z is not None:
+                        if all(e in x for e in z):
+                            remove.add(x)
+                            xs_.add(z)
+                        if all(e in y for e in z):
+                            remove.add(y)
+                            xs_.add(z)
+        xs = xs.union(xs_).difference(remove)
+        if not xs_:
+            break
+    return xs
 
 def tok(cl,r=3):
     """
