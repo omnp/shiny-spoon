@@ -1,27 +1,8 @@
-import math
 import random
 from sympy.logic.boolalg import And, Not, Xor, Equivalent
 from sympy.logic.boolalg import to_cnf
 from sympy import symbols
 from sympy import Symbol
-
-def partials(x,full=False):
-    """
-    x is a set of literals
-    This function generates all the combinations of positive and negative literals in 
-    the given variables.
-    full=True means generate all
-    full=False means generate all except for the one where each element of x is negated
-    """
-    for i in range(2**len(x)-(1 if not full else 0)):
-        z = list(x)
-        j = 0
-        while i:
-            if i & 1:
-                z[j] = -z[j]
-            i >>= 1
-            j += 1
-        yield tuple(sorted(z,key=abs))
 
 I = 0 # Global to hold the total number of recursive steps taken.
 def sat(xs, MaxRecSteps=None):
@@ -32,6 +13,7 @@ def sat(xs, MaxRecSteps=None):
     _xs_ = set(xs)
     Depth = 0
     J = 0
+    Resolvents = set()
     def resolve(target, a=set(), depth=0):
         """
             Recursive procedure for checking unsatisfiability. Whether target can be resolved from the given clauses.
@@ -41,44 +23,68 @@ def sat(xs, MaxRecSteps=None):
         nonlocal Depth
         nonlocal _xs_
         nonlocal MaxRecSteps
+        nonlocal Resolvents
         depth += 1
         I += 1
         J += 1
         if MaxRecSteps is not None and J >= MaxRecSteps:
-            return {target}
+            raise ValueError({target})
         Depth = max(Depth, depth)
+        if target in Resolvents or any(all(e in target for e in x) for x in Resolvents):
+            return {target}
         if target in _xs_ or any(all(e in target for e in x) for x in _xs_):
             return {target}
         else:
-            xs = {tuple(e for e in x if -e not in a) for x in _xs_ if not any(e in a for e in x)}
-            if not xs:
-                return None
-            if not all(xs):
-                return {target}
-            xs_ = [x for x in xs if any(sum(1 if -e in x else 0 for e in y) == 1 for y in xs)]
-            if xs_:
-                literals = set.union(*(set(x) for x in xs_))
-                nn = {e for e in literals if -e not in literals}
-                literals = literals.difference(nn)
-                if not literals:
+            nn = set()
+            while True:
+                xs = {tuple(e for e in x if -e not in a.union(nn)) for x in _xs_ if not any(e in a.union(nn) for e in x)}
+                xs = preprocess(xs)
+                if not xs:
                     return None
-                e = min(sorted(literals,key=abs),key=lambda e:sum(1 if e in x else 0 for x in xs_))
-                b = tuple(sorted(set(target).union({-e}),key=abs))
-                c = tuple(sorted(set(target).union({e}),key=abs))
-                u = v = None
-                u = resolve(b, a.union({e}).union(nn), depth)
+                if not all(xs):
+                    return {target}
+                literals = set.union(*(set(x) for x in xs))
+                nn_ = {e for e in literals if -e not in literals}
+                for x in xs:
+                    if len(x) <= 1:
+                        for e in x: nn_.add(e)
+                nn = nn_.union(nn)
+                literals = literals.difference(nn)
+                if not nn_:
+                    break
+            if not literals:
+                return None
+            if len(target) >= 3:
+                e = max(target,key=abs)
+                x_ = None
+                for x in _xs_:
+                    if -e in x:
+                        if x_ is None or tuple(abs(e) for e in x) < tuple(abs(e) for e in x_):
+                            x_ = x
+                x_ = tuple(sorted(set(x_).difference({-e}),key=abs))
+                for e in sorted(x_,key=abs):
+                    d = tuple(sorted(set(x_).difference({e}).union({-e}),key=abs))
+                    w = resolve(d, a.union({e}), depth)
+                    if w is None:
+                        return None
+                    x_ = tuple(f for f in x_ if f != e)
+            else:
+                e = min(literals,key=abs)
+                b = tuple(sorted(set(target).union({e}),key=abs))
+                c = tuple(sorted(set(target).union({-e}),key=abs))
+                u = resolve(b, a.union({-e}).union(nn), depth)
                 if u is None:
                     return None
-                v = resolve(c, a.union({-e}).union(nn), depth)
+                v = resolve(c, a.union({e}).union(nn), depth)
                 if v is None:
                     return None
-                return {target}
+            Resolvents.add(target)
+            return {target}
     target = ()
     Depth = 0
     r = resolve(target)
     return not(r is not None and () in r), r
 
-_sat = sat
 def driver(Xs, t = 6):
     """
     Applies the above recursive function a number of times in different configurations of clauses.
@@ -179,22 +185,25 @@ def driver(Xs, t = 6):
                         y = tuple(sorted(y,key=abs))
                         ys.add(y)
                     xs_ = Xs[u].union(ys)
-                    K = 1 + int(math.log(len(xs_))/math.log(2))
-                    print(f'\rt k', '\t',t_,'\t',k,'\t',K,'\t',2**K,'\t',len(xs_),'\t',len(Xs[u]), end='')
-                    if _sat(xs_, 2**K)[0]:
-                        print()
-                        return True, u
+                    m = len(xs_)
+                    xs_ = preprocess(xs_)
+                    print(f'\rt k', '\t',t_,'\t',k,'\t',m,'\t',len(xs_),'\t',len(Xs[u]), end='')
+                    try:
+                        if sat(xs_, m)[0]:
+                            print()
+                            return True, u
+                    except ValueError:
+                        pass
     print()
     return False, None
 
-sat = driver
-def wrapper(xs, variables=None):
+def driver_wrapper(xs, variables=None):
     """
     Tries to generate a valid assignment, given one exists.
     """
     xs = {tuple(sorted(x,key=abs)) for x in xs}
     clauses = set(xs)
-    t = sat({0: preprocess(clauses)})
+    t = driver({0: preprocess(clauses)})
     if t[0]:
         variables = variables or list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
         result = set()
@@ -205,7 +214,10 @@ def wrapper(xs, variables=None):
                 if u in literals:
                     cs = {tuple(e for e in x if -e not in result.union({u})) for x in clauses if not any(e in result.union({u}) for e in x)}
                     Cs[u] = preprocess(cs)
-            t = sat(Cs)
+            if not Cs:
+                result.add(v)
+                continue
+            t = driver(Cs)
             if t[0]:
                 u = t[1]
                 print('v',u)
@@ -214,6 +226,37 @@ def wrapper(xs, variables=None):
                 print(Cs)
                 print(v)
                 raise ValueError
+        return result
+    return set()
+
+def wrapper(xs, variables=None):
+    """
+    Tries to generate a valid assignment, given one exists.
+    """
+    xs = {tuple(sorted(x,key=abs)) for x in xs}
+    clauses = set(xs)
+    t = sat(clauses)
+    if t[0]:
+        variables = variables or list(sorted(set.union(*(set(abs(e) for e in x) for x in clauses))))
+        result = set()
+        for v in sorted(variables,key=abs):
+            if not clauses:
+                result.add(v)
+                continue
+            literals = list(sorted(set.union(*(set(e for e in x) for x in clauses)),key=abs))
+            if v in literals:
+                cs = {tuple(e for e in x if -e not in result.union({v})) for x in clauses if not any(e in result.union({v}) for e in x)}
+                t = sat(cs)
+                if t[0]:
+                    print('v',v)
+                    result.add(v)
+                    clauses = cs
+                else:
+                    print('v',-v)
+                    result.add(-v)
+            else:
+                print('v',-v)
+                result.add(-v)
         return result
     return set()
 
@@ -240,23 +283,23 @@ def preprocess(xs):
                                 xs.remove(x)
                                 xs.remove(y)
                                 xs_.add(z)
+                                break
         xs = xs.union(xs_)
         if not xs_:
             break
     while True:
         xs_ = set()
         remove = set()
-        for x in list(xs):
-            for y in list(xs):
-                if x in xs and y in xs:
-                    z = resolve(x, y)
-                    if z is not None:
-                        if all(e in x for e in z):
-                            remove.add(x)
-                            xs_.add(z)
-                        if all(e in y for e in z):
-                            remove.add(y)
-                            xs_.add(z)
+        for x in xs:
+            for y in xs:
+                z = resolve(x, y)
+                if z is not None:
+                    if all(e in x for e in z):
+                        remove.add(x)
+                        xs_.add(z)
+                    if all(e in y for e in z):
+                        remove.add(y)
+                        xs_.add(z)
         xs = xs.union(xs_).difference(remove)
         if not xs_:
             break
@@ -398,3 +441,30 @@ def randomize(xs):
     xs = {tuple(sorted(x,key=abs)) for x in xs}
     xs = randomize_signs(randomize_names(xs))
     return xs
+
+def randomize_order(variables):
+    """
+    Shuffles a tuple.
+    """
+    variables = list(variables)
+    random.shuffle(variables)
+    return tuple(variables)
+
+def random_instance(n,m,k):
+    """
+    Generates a random instance targeted to have n variables, m clauses, with clause length equal to k.
+    """
+    xs = set()
+    counter = 0
+    limit = 512
+    variables = tuple(range(1,1+n))
+    while len(xs) < m:
+        xs_ = set(xs)
+        xs.add(tuple(sorted((random.choice((1,-1)) * v for v in randomize_order(variables)[:k]), key=abs)))
+        if xs_ == xs:
+            counter += 1
+        else:
+            counter = 0
+        if counter >= limit:
+            break
+    return variables, xs
