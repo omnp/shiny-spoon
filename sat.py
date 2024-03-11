@@ -42,8 +42,10 @@ def propagate(xs, assignment):
     value = None
     ls = set()
     while True:
+        if any(-e in assignment.union(unit) for e in assignment.union(unit)):
+            value = False
+            break
         xs = exclude(xs, assignment.union(unit))
-        xs = preprocess(xs)
         if not xs:
             value = True
             break
@@ -56,7 +58,7 @@ def propagate(xs, assignment):
             if len(x) <= 1:
                 for e in x: unit_.add(e)
         unit = unit_.union(unit)
-        ls = ls.difference(unit)
+        ls = ls.difference(unit).difference(assignment)
         if not unit_:
             break
     return value, assignment.union(unit), ls, xs    
@@ -74,7 +76,7 @@ def sat(xs, MaxRecSteps=None):
     Depth = 0
     J = 0
     Resolvents = set(_xs_)
-    def resolve(target, a=set(), depth=0):
+    def resolve(target, a=set(), depth=0, used=set()):
         """
             Recursive procedure for checking unsatisfiability. 
             Whether target can be resolved from the given clauses.
@@ -92,37 +94,38 @@ def sat(xs, MaxRecSteps=None):
             raise ValueError({target})
         Depth = max(Depth, depth)
         if contains_any(target, Resolvents):
+            if len(target) <= 3: Resolvents.add(target)
             return {target}
-        value, a, literals, _ = propagate(_xs_, a)
+        value, a, literals, xs = propagate(_xs_, a)
         if value is False:
+            if len(target) <= 3: Resolvents.add(target)
             return {target}
         if value is True:
             return None
         if not literals:
             return None
-        if len(target) >= 3:
-            e = max(target,key=abs)
-            x_ = None
-            for x in _xs_:
-                if -e in x:
-                    if x_ is None or tuple_less_than(x, x_):
-                        x_ = x
-            x_ = exclude_element(x_, -e)
-            for e in sorted(x_,key=abs):
-                d = complement_element(x_, e)
-                w = resolve(d, a.union({e}), depth)
-                if w is None:
-                    return None
-                x_ = exclude_element(x_, e)
-        else:
+        if len(target) < 3:
             e = min(literals,key=abs)
             b = add_element(target, e)
             c = add_element(target, -e)
-            if resolve(b, a.union({-e}), depth) is None:
+            if resolve(b, a.union({-e}), depth, used) is None:
                 return None
-            if resolve(c, a.union({e}), depth) is None:
+            if resolve(c, a.union({e}), depth, used) is None:
                 return None
-        Resolvents.add(target)
+        else:
+            xs_ = _xs_.difference(used)
+            xs_ = {x for x in xs_ if not any(-e in target for e in x)}
+            if not xs_:
+                return None
+            x = max(xs_, key=lambda x: sum(1 if e in target else 0 for e in x))
+            z = set(x).union(target)
+            z = clause(z)
+            for e in set(x).difference(target):
+                d = complement_element(z, e)
+                if resolve(d, a.union({e}), depth, used.union({x})) is None:
+                    return None
+                z = exclude_element(z, e)
+        if len(target) <= 3: Resolvents.add(target)
         return {target}
     target = ()
     Depth = 0
@@ -310,19 +313,19 @@ def wrapper(xs, variables=None):
         return result
     return set()
 
-def resolve(x,y):
-    if sum(1 if -e in x else 0 for e in y) == 1:
+def resolve(x,y,lt=False):
+    if (s := sum(1 if -e in x else 0 for e in y)) == 1 or lt and s <= 1:
         z = set(x).difference({-e for e in y}).union(
             set(y).difference({-e for e in x}))
         z = clause(z)
         return z
 
-def preprocess(xs):
+def preprocess(xs, limit=None, undo=False):
     """
     Undo the process of the to3 (tok) function(s).
     """
     xs = set(xs)
-    while True:
+    while undo:
         xs_ = set()
         for x in list(xs):
             for y in list(xs):
@@ -344,7 +347,7 @@ def preprocess(xs):
         for x in xs:
             for y in xs:
                 z = resolve(x, y)
-                if z is not None:
+                if z is not None and (limit is None or len(z) <= limit):
                     if all(e in x for e in z):
                         remove.add(x)
                         xs_.add(z)
@@ -354,6 +357,14 @@ def preprocess(xs):
         xs = xs.union(xs_).difference(remove)
         if not xs_:
             break
+    return clean(xs)
+
+def clean(xs):
+    for x in list(xs):
+        for y in xs:
+            if x != y and all(e in x for e in y):
+                xs.remove(x)
+                break
     return xs
 
 def tok(cl,r=3):
