@@ -104,27 +104,18 @@ def sat(xs, MaxRecSteps=None):
             return None
         if not literals:
             return None
-        if len(target) < 3:
-            e = min(literals,key=abs)
-            b = add_element(target, e)
-            c = add_element(target, -e)
-            if resolve(b, a.union({-e}), depth, used) is None:
+        xs_ = _xs_.difference(used)
+        xs_ = {x for x in xs_ if not any(-e in target for e in x)}
+        if not xs_:
+            return None
+        x = max(xs_, key=lambda x: sum(1 if e in target else 0 for e in x))
+        z = set(x).union(target)
+        z = clause(z)
+        for e in set(x).difference(target):
+            d = complement_element(z, e)
+            if resolve(d, a.union({e}), depth, used.union({x})) is None:
                 return None
-            if resolve(c, a.union({e}), depth, used) is None:
-                return None
-        else:
-            xs_ = _xs_.difference(used)
-            xs_ = {x for x in xs_ if not any(-e in target for e in x)}
-            if not xs_:
-                return None
-            x = max(xs_, key=lambda x: sum(1 if e in target else 0 for e in x))
-            z = set(x).union(target)
-            z = clause(z)
-            for e in set(x).difference(target):
-                d = complement_element(z, e)
-                if resolve(d, a.union({e}), depth, used.union({x})) is None:
-                    return None
-                z = exclude_element(z, e)
+            z = exclude_element(z, e)
         if len(target) <= 3: Resolvents.add(target)
         return {target}
     target = ()
