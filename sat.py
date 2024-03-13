@@ -76,7 +76,7 @@ def sat(xs, MaxRecSteps=None):
     Depth = 0
     J = 0
     Resolvents = set(_xs_)
-    def resolve(target, a=set(), depth=0, used=set()):
+    def resolve(target, a=set(), depth=0):
         """
             Recursive procedure for checking unsatisfiability. 
             Whether target can be resolved from the given clauses.
@@ -90,33 +90,28 @@ def sat(xs, MaxRecSteps=None):
         depth += 1
         I += 1
         J += 1
+        print(f'\r{J}',end='')
         if MaxRecSteps is not None and J >= MaxRecSteps:
             raise ValueError({target})
         Depth = max(Depth, depth)
         if contains_any(target, Resolvents):
-            if len(target) <= 3: Resolvents.add(target)
             return {target}
-        value, a, literals, xs = propagate(_xs_, a)
+        value, a, literals, _ = propagate(_xs_, a)
         if value is False:
-            if len(target) <= 3: Resolvents.add(target)
             return {target}
         if value is True:
             return None
         if not literals:
             return None
-        xs_ = _xs_.difference(used)
-        xs_ = {x for x in xs_ if not any(-e in target for e in x)}
-        if not xs_:
-            return None
-        x = max(xs_, key=lambda x: sum(1 if e in target else 0 for e in x))
+        e = min(literals,key=abs)
+        x = {e,-e}
         z = set(x).union(target)
         z = clause(z)
         for e in set(x).difference(target):
-            d = complement_element(z, e)
-            if resolve(d, a.union({e}), depth, used.union({x})) is None:
+            d = z
+            if resolve(d, a.union({e}), depth) is None:
                 return None
             z = exclude_element(z, e)
-        if len(target) <= 3: Resolvents.add(target)
         return {target}
     target = ()
     Depth = 0
