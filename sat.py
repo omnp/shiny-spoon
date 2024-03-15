@@ -61,7 +61,7 @@ def propagate(xs, assignment):
         ls = ls.difference(unit).difference(assignment)
         if not unit_:
             break
-    return value, assignment.union(unit), ls, xs    
+    return value, assignment.union(unit), ls
 
 def tuple_less_than(x,y):
     return tuple(abs(e) for e in x) < tuple(abs(e) for e in y)
@@ -95,28 +95,24 @@ def sat(xs, MaxRecSteps=None):
             raise ValueError({target})
         Depth = max(Depth, depth)
         if contains_any(target, Resolvents):
-            return {target}
-        value, a, literals, _ = propagate(_xs_, a)
+            return None
+        value, a, literals = propagate(_xs_, a)
         if value is False:
-            return {target}
+            return None
         if value is True:
-            return None
+            return a
         if not literals:
-            return None
+            return a
         e = min(literals,key=abs)
         x = {e,-e}
-        z = set(x).union(target)
-        z = clause(z)
         for e in set(x).difference(target):
-            d = z
-            if resolve(d, a.union({e}), depth) is None:
-                return None
-            z = exclude_element(z, e)
-        return {target}
+            if (r := resolve(add_element(target, e), a.union({e}), depth)) is not None:
+                return r
+        return None
     target = ()
     Depth = 0
     r = resolve(target)
-    return not(r is not None and () in r), r
+    return r is not None and all(any(e in r for e in x) for x in xs), r
 
 def driver(Xs, t = 6):
     """
@@ -224,13 +220,12 @@ https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
                         ys.add(y)
                     xs_ = Xs[u].union(ys)
                     m = len(xs_)
-                    xs_ = preprocess(xs_)
                     print(f'\rt k', '\t',t_,'\t',k,'\t',m,'\t',len(xs_),
                           '\t',len(Xs[u]), end='')
                     try:
-                        if sat(xs_, m)[0]:
+                        if (s := sat(xs_, m))[0]:
                             print()
-                            return True, u
+                            return s
                     except ValueError:
                         pass
     print()
