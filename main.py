@@ -43,7 +43,7 @@ if len(sys.argv) > 1:
             variables_ = sat.get_variables(clauses3x)
             print(len(clauses3x), len(variables_))
             sat.I = 0
-            t = sat.driver(clauses3x)[1]
+            t = sat.sat(clauses3x)[1]
             if t is not None:
                 t = [e for e in t if abs(e) in variables]
                 print(t)
