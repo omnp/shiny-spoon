@@ -73,46 +73,36 @@ def sat(xs, MaxRecSteps=None):
     if not all(xs):
         return False, None
     _xs_ = set(xs)
-    Depth = 0
     J = 0
-    Resolvents = set(_xs_)
-    def resolve(target, a=set(), depth=0):
+    def recursive(xs, target=()):
         """
             Recursive procedure for checking unsatisfiability. 
             Whether target can be resolved from the given clauses.
         """
         global I
-        nonlocal J
-        nonlocal Depth
-        nonlocal _xs_
-        nonlocal MaxRecSteps
-        nonlocal Resolvents
-        depth += 1
+        nonlocal J, MaxRecSteps
         I += 1
         J += 1
-        print(f'\r{J}',end='')
+        print(f'\r{J}', end='')
         if MaxRecSteps is not None and J >= MaxRecSteps:
-            raise ValueError({target})
-        Depth = max(Depth, depth)
-        if contains_any(target, Resolvents):
-            return None
-        value, a, literals = propagate(_xs_, a)
-        if value is False:
-            return None
-        if value is True:
-            return a
-        if not literals:
-            return a
-        e = min(literals,key=abs)
-        x = {e,-e}
-        for e in set(x).difference(target):
-            if (r := resolve(add_element(target, e), a.union({e}), depth)) is not None:
-                return r
-        return None
+            raise ValueError
+        if contains_any(target, xs):
+            return False, None
+        value,assignment,literals = propagate(xs, set(target))
+        if value is not None:
+            return value, assignment if value else None
+        variables = {abs(e) for e in literals}
+        if not variables:
+            return True, assignment
+        e = min(variables)
+        x, y = add_element(target, e), add_element(target, -e)
+        if (r := recursive(xs, x))[0]:
+            return r
+        if (r := recursive(xs, y))[0]:
+            return r
+        return False, None
     target = ()
-    Depth = 0
-    r = resolve(target)
-    return r is not None and all(any(e in r for e in x) for x in xs), r
+    return recursive(_xs_, target)
 
 def driver(Xs, t = 6):
     """
