@@ -1,7 +1,7 @@
 import random
 import sat
 import sys
-sys.setrecursionlimit(1000000)
+sys.setrecursionlimit(1000)
 random.seed(1)
 if len(sys.argv) > 1:
     if len(sys.argv) > 2:
