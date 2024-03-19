@@ -70,3 +70,22 @@ while len(xs) > 0:
     print(sat.sat(xs)[0])
     print(sat.I)
 """
+N = 10
+for n in range(1,1+N):
+    print(f'Number of variables: {n}')
+    variables = set(range(1,1+n))
+    m = n#3
+    xs = sat.generate_full_alt(variables, j=min(n,m),k=min(n,m),full=True)
+    xs_ = set()
+    K = 0
+    Min = None
+    Max = None 
+    for i,x in enumerate(xs):
+        xs_.add(x)
+        sat.I = 0
+        sat.sat(sat.to3(sat.randomize(set(xs_))))
+        K += sat.I
+        Min = sat.I if Min is None else min(Min, sat.I)
+        Max = sat.I if Max is None else max(Max, sat.I)
+        print(f'\r\t{i}\tSteps taken {sat.I} {sat.I/len(xs_)}', end='')
+    print(f'\nAverage recursive steps taken and minimum and maximum: {K/len(xs)} {Min} {Max}')
