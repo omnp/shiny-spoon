@@ -74,35 +74,39 @@ def sat(xs, MaxRecSteps=None):
         return False, None
     _xs_ = set(xs)
     J = 0
-    def recursive(xs, target=()):
+    def iterative(xs, target=()):
         """
-            Recursive procedure for checking unsatisfiability. 
+            Iterative procedure for checking unsatisfiability. 
             Whether target can be resolved from the given clauses.
         """
         global I
         nonlocal J, MaxRecSteps
-        I += 1
-        J += 1
-        print(f'\r{J}', end='')
-        if MaxRecSteps is not None and J >= MaxRecSteps:
-            raise ValueError
-        if contains_any(target, xs):
-            return False, None
-        value,assignment,literals = propagate(xs, set(target))
-        if value is not None:
-            return value, assignment if value else None
-        variables = {abs(e) for e in literals}
-        if not variables:
-            return True, assignment
-        e = min(variables)
-        x, y = add_element(target, e), add_element(target, -e)
-        if (r := recursive(xs, x))[0]:
-            return r
-        if (r := recursive(xs, y))[0]:
-            return r
+        targets = [target]
+        while targets:
+            target = targets.pop()
+            I += 1
+            J += 1
+            print(f'\r{J}', end='')
+            if MaxRecSteps is not None and J >= MaxRecSteps:
+                raise ValueError
+            if contains_any(target, xs):
+                continue
+            value,assignment,literals = propagate(xs, set(target))
+            if value is not None:
+                if value:
+                    return value, assignment
+                else:
+                    continue
+            variables = {abs(e) for e in literals}
+            if not variables:
+                return True, assignment
+            e = min(variables)
+            x, y = add_element(target, e), add_element(target, -e)
+            targets.append(y)
+            targets.append(x)
         return False, None
     target = ()
-    return recursive(_xs_, target)
+    return iterative(_xs_, target)
 
 def driver(Xs, t = 6):
     """
