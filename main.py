@@ -1,7 +1,7 @@
 import random
 import sat
 import sys
-sys.setrecursionlimit(1000)
+
 random.seed(1)
 if len(sys.argv) > 1:
     if len(sys.argv) > 2:
@@ -70,7 +70,7 @@ while len(xs) > 0:
     print(sat.sat(xs)[0])
     print(sat.I)
 """
-N = 10
+N = 7
 for n in range(1,1+N):
     print(f'Number of variables: {n}')
     variables = set(range(1,1+n))
@@ -89,3 +89,10 @@ for n in range(1,1+N):
         Max = sat.I if Max is None else max(Max, sat.I)
         print(f'\r\t{i}\tSteps taken {sat.I} {sat.I/len(xs_)}', end='')
     print(f'\nAverage recursive steps taken and minimum and maximum: {K/len(xs)} {Min} {Max}')
+
+import waerden
+xs = waerden.waerden(4,5,55)#(3,5,22)
+sat.I = 0
+variables = sat.get_variables(xs)
+print(len(xs), len(variables))
+print(sat.sat(set(xs))[0], sat.I)
