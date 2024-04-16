@@ -51,6 +51,7 @@ if len(sys.argv) > 1:
             else:
                 print(t)
             print(sat.I)
+    exit()
 
 """
 Making an instance and processing it. 
@@ -83,7 +84,7 @@ for n in range(1,1+N):
     for i,x in enumerate(xs):
         xs_.add(x)
         sat.I = 0
-        sat.sat(sat.to3(sat.randomize(set(xs_))))
+        sat.sat(sat.randomize(set(xs_)))
         K += sat.I
         Min = sat.I if Min is None else min(Min, sat.I)
         Max = sat.I if Max is None else max(Max, sat.I)
