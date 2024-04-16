@@ -61,7 +61,7 @@ def propagate(xs, assignment):
         ls = ls.difference(unit).difference(assignment)
         if not unit_:
             break
-    return value, assignment.union(unit), ls
+    return value, assignment.union(unit), ls, xs
 
 def tuple_less_than(x,y):
     return tuple(abs(e) for e in x) < tuple(abs(e) for e in y)
@@ -72,41 +72,54 @@ def sat(xs, MaxRecSteps=None):
         return True, set()
     if not all(xs):
         return False, None
-    _xs_ = set(xs)
     J = 0
-    def iterative(xs, target=()):
+    def recursive(a = set()):
         """
-            Iterative procedure for checking unsatisfiability. 
-            Whether target can be resolved from the given clauses.
+        Recursive procedure for checking satisfiability. 
         """
         global I
-        nonlocal J, MaxRecSteps
-        targets = [target]
-        while targets:
-            target = targets.pop()
-            I += 1
-            J += 1
-            print(f'\r{J}', end='')
-            if MaxRecSteps is not None and J >= MaxRecSteps:
-                raise ValueError
-            if contains_any(target, xs):
-                continue
-            value,assignment,literals = propagate(xs, set(target))
-            if value is not None:
-                if value:
-                    return value, assignment
-                else:
-                    continue
-            variables = {abs(e) for e in literals}
-            if not variables:
-                return True, assignment
-            e = min(variables)
-            x, y = add_element(target, e), add_element(target, -e)
-            targets.append(y)
-            targets.append(x)
+        nonlocal xs, J, MaxRecSteps
+        I += 1
+        J += 1
+        print(f'\r{J}', end='')
+        if MaxRecSteps is not None and J >= MaxRecSteps:
+            raise ValueError
+        value, a, vs, xs_ = propagate(set(xs), a)
+        if value is True:
+            return True, a
+        if value is False:
+            return False, None
+        forced = {}
+        forced_by = {}
+        for v in vs:
+            if v not in forced:
+                forced[v] = set()
+            for x in xs_:
+                if -v in x:
+                    if len(x) <= 2:
+                        for e in x:
+                            if e != -v:
+                                forced[v].add(e)
+                if v in x:
+                    if v not in forced_by:
+                        forced_by[v] = set()
+                    forced_by[v].add(tuple(-e for e in x if e != v))
+        v = max(vs, key = lambda v: len(set.intersection(*(set(y) for y in forced_by[v]))))
+        vs_ = {u for u in vs if len(set.intersection(*(set(y) for y in forced_by[u]))) >= len(set.intersection(*(set(y) for y in forced_by[v])))}
+        v = min(vs_,key=abs)
+        for v in (v,-v):
+            if v in vs:
+                i = set.intersection(*(set(y) for y in forced_by[v]))
+                a_ = a.union({v}).union(i).union(forced[v])
+                val, a_, _, _ = propagate(set(xs_), a_)
+                if val is True:
+                    return True, a_
+                elif val is None:
+                    r = recursive(a_)
+                    if r[0]:
+                        return r
         return False, None
-    target = ()
-    return iterative(_xs_, target)
+    return recursive()
 
 def driver(Xs, t = 6):
     """
