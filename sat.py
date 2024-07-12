@@ -519,3 +519,31 @@ def random_instance(n,m,k):
         if counter >= limit:
             break
     return variables, xs
+
+def rec_sat(xs, a = set()):
+    global I
+    I += 1
+    assert(not(any(-e in a for e in a)))
+    if not xs:
+        return True, a
+    if not(all(xs)):
+        return False, None
+    z = min(xs,key=lambda x:tuple(abs(e) for e in x))
+    for v in z:
+        xsv = {x for x in xs if v in x}
+        xsn = {x for x in xs if v not in x}
+        ands = {tuple(-e for e in x if e != v) for x in xsv}
+        ors = {tuple(e for e in x if e != -v) for x in xsn}
+        i = set.intersection(*(set(x) for x in ands))
+        ands = {tuple(e for e in x if e not in i) for x in ands}
+        for x in ands:
+             assert(-v not in x)
+             a_ = a.union({v}).union(x).union(i)
+             ors_ = {tuple(e for e in y if -e not in a_) for y in ors if not any(e in a_ for e in y)}
+             t,s = rec_sat(ors_, a_)
+             if t:
+                 return t,s
+    return False, None
+
+def sat(xs, MaxRecSteps=None):
+    return rec_sat(xs)
