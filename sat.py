@@ -528,7 +528,9 @@ def rec_sat(xs, a = set()):
         return True, a
     if not(all(xs)):
         return False, None
-    z = min(xs,key=lambda x:tuple(abs(e) for e in x))
+    m = min(len(z) for z in xs)
+    zs = {z for z in xs if len(z) <= m}
+    z = min(zs,key=lambda x:tuple(abs(e) for e in x))
     for v in z:
         xsv = {x for x in xs if v in x}
         xsn = {x for x in xs if v not in x}
@@ -540,9 +542,11 @@ def rec_sat(xs, a = set()):
              assert(-v not in x)
              a_ = a.union({v}).union(x).union(i)
              ors_ = {tuple(e for e in y if -e not in a_) for y in ors if not any(e in a_ for e in y)}
-             t,s = rec_sat(ors_, a_)
-             if t:
-                 return t,s
+             t,a_,_,ors_ = propagate(ors_, a_)
+             if t is not False:
+                t,s = rec_sat(ors_, a_)
+                if t:
+                    return t,s
     return False, None
 
 def sat(xs, MaxRecSteps=None):
