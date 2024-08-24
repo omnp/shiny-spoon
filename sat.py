@@ -4,38 +4,52 @@ from sympy.logic.boolalg import to_cnf
 from sympy import symbols
 from sympy import Symbol
 
+
 def add_element(x, e):
     return clause(set(x).union({e}))
 
+
 def clause(x):
-    return tuple(sorted(set(x),key=abs))
+    return tuple(sorted(set(x), key=abs))
+
 
 def complement_element(x, e):
     return clause(set(x).difference({e}).union({-e}))
 
+
 def contains_any(x, xs):
     return any(all(e in x for e in y) for y in xs)
+
 
 def exclude_element(x, e):
     return tuple(f for f in x if f != e)
 
+
 def exclude_elements(x, es):
     return tuple(f for f in x if f not in es)
+
 
 def exclude_complement_elements(x, es):
     return tuple(f for f in x if -f not in es)
 
+
 def exclude(xs, es):
-    return {exclude_complement_elements(x, es) 
-            for x in xs if not any(e in es for e in x)}
+    return {
+        exclude_complement_elements(x, es)
+        for x in xs
+        if not any(e in es for e in x)
+    }
+
 
 def get_literals(xs):
-    assert(xs)
+    assert xs
     return set.union(*(set(x) for x in xs))
 
+
 def get_variables(xs):
-    assert(xs)
+    assert xs
     return set.union(*({abs(e) for e in x} for x in xs))
+
 
 def propagate(xs, assignment):
     unit = set()
@@ -56,32 +70,38 @@ def propagate(xs, assignment):
         unit_ = {e for e in ls if -e not in ls}
         for x in xs:
             if len(x) <= 1:
-                for e in x: unit_.add(e)
+                for e in x:
+                    unit_.add(e)
         unit = unit_.union(unit)
         ls = ls.difference(unit).difference(assignment)
         if not unit_:
             break
     return value, assignment.union(unit), ls, xs
 
-def tuple_less_than(x,y):
+
+def tuple_less_than(x, y):
     return tuple(abs(e) for e in x) < tuple(abs(e) for e in y)
 
-I = 0 # Global to hold the total number of recursive steps taken.
-def sat(xs, MaxRecSteps=None):
+
+Global_Counter = 0  # Global to hold the total number of recursive steps taken.
+
+
+def sat_(xs, MaxRecSteps=None):
     if not xs:
         return True, set()
     if not all(xs):
         return False, None
     J = 0
-    def recursive(a = set()):
+
+    def recursive(a=set()):
         """
-        Recursive procedure for checking satisfiability. 
+        Recursive procedure for checking satisfiability.
         """
-        global I
+        global Global_Counter
         nonlocal xs, J, MaxRecSteps
-        I += 1
+        Global_Counter += 1
         J += 1
-        print(f'\r{J}', end='')
+        print(f"\r{J}", end="")
         if MaxRecSteps is not None and J >= MaxRecSteps:
             raise ValueError
         value, a, vs, xs_ = propagate(set(xs), a)
@@ -104,10 +124,20 @@ def sat(xs, MaxRecSteps=None):
                     if v not in forced_by:
                         forced_by[v] = set()
                     forced_by[v].add(tuple(-e for e in x if e != v))
-        v = max(vs, key = lambda v: len(set.intersection(*(set(y) for y in forced_by[v]))))
-        vs_ = {u for u in vs if len(set.intersection(*(set(y) for y in forced_by[u]))) >= len(set.intersection(*(set(y) for y in forced_by[v])))}
-        v = min(vs_,key=abs)
-        for v in (v,-v):
+        v = max(
+            vs,
+            key=lambda v: len(
+                set.intersection(*(set(y) for y in forced_by[v]))
+            ),
+        )
+        vs_ = {
+            u
+            for u in vs
+            if len(set.intersection(*(set(y) for y in forced_by[u])))
+            >= len(set.intersection(*(set(y) for y in forced_by[v])))
+        }
+        v = min(vs_, key=abs)
+        for v in (v, -v):
             if v in vs:
                 i = set.intersection(*(set(y) for y in forced_by[v]))
                 a_ = a.union({v}).union(i).union(forced[v])
@@ -119,22 +149,24 @@ def sat(xs, MaxRecSteps=None):
                     if r[0]:
                         return r
         return False, None
+
     return recursive()
 
-def driver(Xs, t = 6):
+
+def driver(Xs, t=6):
     """
-    Applies the above recursive function a number of times in different 
+    Applies the above recursive function a number of times in different
     configurations of clauses.
-    Until an assignment is found or gives up when the set limit for number 
+    Until an assignment is found or gives up when the set limit for number
     of steps is hit.
     """
     global J
     if type(Xs) != dict:
         Xs = {0: Xs}
-    for u,xs in Xs.items():
+    for u, xs in Xs.items():
         if not xs:
             return True, u
-    for u,xs in list(Xs.items()):
+    for u, xs in list(Xs.items()):
         if not all(xs):
             del Xs[u]
     if not Xs:
@@ -143,33 +175,33 @@ def driver(Xs, t = 6):
     N = {}
     Symbols = {}
     M = 0
-    for u,xs in Xs.items():
+    for u, xs in Xs.items():
         variables = list(sorted(get_variables(xs)))
         Variables[u] = variables
         n = len(variables)
         N[u] = n
-        sm = symbols(' '.join(str(v) for v in variables))
+        sm = symbols(" ".join(str(v) for v in variables))
         if type(sm) == Symbol:
             sm = (sm,)
         Symbols[u] = sm
-        M = max(M,max(variables))
+        M = max(M, max(variables))
     n = max(N.values())
     """
     The following section is inspired by the following blog post which explains
       in some detail the practical application of the Valiant-Vazirani theorem:
-    
+
 https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
 
-    All errors and misunderstandings in the following implementation are 
+    All errors and misunderstandings in the following implementation are
     entirely my own.
-    This code is also the reason why (a part of) the SymPy package is now 
+    This code is also the reason why (a part of) the SymPy package is now
     imported and required.
     """
-    for k in range(0,n+1):
+    for k in range(0, n + 1):
         for t_ in range(t):
             for u in Xs:
                 """
-                This bit (iterating u's) is an addition where we check both 
+                This bit (iterating u's) is an addition where we check both
                 positive and negative literal one after the other on each step.
                 """
                 variables = Variables[u]
@@ -180,34 +212,34 @@ https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
                 """
                 vectors = []
                 bits = []
-                for i in range(1,k+3):
+                for i in range(1, k + 3):
                     vector = []
                     for _ in range(n):
-                        vector.append(random.randint(0,1))
-                    bit = random.randint(0,1)
+                        vector.append(random.randint(0, 1))
+                    bit = random.randint(0, 1)
                     vectors.append(vector)
                     bits.append(bit)
-                aux = list(range(M+1,M+1+n*(k+2)))
-                sm_aux = symbols(' '.join(str(v) for v in aux))
+                aux = list(range(M + 1, M + 1 + n * (k + 2)))
+                sm_aux = symbols(" ".join(str(v) for v in aux))
                 sm_mapping = {}
-                for s,i in zip(sm, variables):
+                for s, i in zip(sm, variables):
                     sm_mapping[s] = i
-                for s,i in zip(sm_aux,aux):
+                for s, i in zip(sm_aux, aux):
                     sm_mapping[s] = i
                 expression = True
-                for i,(vector,bit) in enumerate(zip(vectors,bits)):
+                for i, (vector, bit) in enumerate(zip(vectors, bits)):
                     exr = None
                     for j in range(n):
                         x = sm[j]
-                        y = sm_aux[i*n+j]
+                        y = sm_aux[i * n + j]
                         a = vector[j] > 0
                         b = bit > 0
                         if exr is None:
                             exr = And(x, a)
                         else:
-                            exr = Xor(sm_aux[i*n+j-1], Xor(And(a, x), b))
-                        exr = Equivalent(y,exr)
-                    expression = And(expression,exr)
+                            exr = Xor(sm_aux[i * n + j - 1], Xor(And(a, x), b))
+                        exr = Equivalent(y, exr)
+                    expression = And(expression, exr)
                 expression = to_cnf(expression)
                 if expression:
                     ys = set()
@@ -223,12 +255,24 @@ https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
                                     y.append(-sm_mapping[literal.args[0]])
                                 else:
                                     y.append(sm_mapping[literal])
-                        y = tuple(sorted(y,key=abs))
+                        y = tuple(sorted(y, key=abs))
                         ys.add(y)
                     xs_ = Xs[u].union(ys)
                     m = len(xs_)
-                    print(f'\rt k', '\t',t_,'\t',k,'\t',m,'\t',len(xs_),
-                          '\t',len(Xs[u]), end='')
+                    print(
+                        "\rt k",
+                        "\t",
+                        t_,
+                        "\t",
+                        k,
+                        "\t",
+                        m,
+                        "\t",
+                        len(xs_),
+                        "\t",
+                        len(Xs[u]),
+                        end="",
+                    )
                     try:
                         if (s := sat(xs_, m))[0]:
                             print()
@@ -237,6 +281,7 @@ https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
                         pass
     print()
     return False, None
+
 
 def driver_wrapper(xs, variables=None):
     """
@@ -248,10 +293,10 @@ def driver_wrapper(xs, variables=None):
     if t[0]:
         variables = variables or list(sorted(get_variables(clauses)))
         result = set()
-        for v in sorted(variables,key=abs):
+        for v in sorted(variables, key=abs):
             Cs = {}
-            literals = list(sorted(get_literals(clauses),key=abs))
-            for u in [v,-v]:
+            literals = list(sorted(get_literals(clauses), key=abs))
+            for u in [v, -v]:
                 if u in literals:
                     cs = exclude(clauses, result.union({u}))
                     Cs[u] = preprocess(cs)
@@ -261,7 +306,7 @@ def driver_wrapper(xs, variables=None):
             t = driver(Cs)
             if t[0]:
                 u = t[1]
-                print('v',u)
+                print("v", u)
                 result.add(u)
             else:
                 print(Cs)
@@ -269,6 +314,7 @@ def driver_wrapper(xs, variables=None):
                 raise ValueError
         return result
     return set()
+
 
 def wrapper(xs, variables=None):
     """
@@ -280,33 +326,38 @@ def wrapper(xs, variables=None):
     if t[0]:
         variables = variables or list(sorted(get_variables(clauses)))
         result = set()
-        for v in sorted(variables,key=abs):
+        for v in sorted(variables, key=abs):
             if not clauses:
                 result.add(v)
                 continue
-            literals = list(sorted(get_literals(clauses),key=abs))
+            literals = list(sorted(get_literals(clauses), key=abs))
             if v in literals:
                 cs = exclude(clauses, result.union({v}))
                 t = sat(cs)
                 if t[0]:
-                    print('v',v)
+                    print("v", v)
                     result.add(v)
                     clauses = cs
                 else:
-                    print('v',-v)
+                    print("v", -v)
                     result.add(-v)
             else:
-                print('v',-v)
+                print("v", -v)
                 result.add(-v)
         return result
     return set()
 
-def resolve(x,y,lt=False):
+
+def resolve(x, y, lt=False):
     if (s := sum(1 if -e in x else 0 for e in y)) == 1 or lt and s <= 1:
-        z = set(x).difference({-e for e in y}).union(
-            set(y).difference({-e for e in x}))
+        z = (
+            set(x)
+            .difference({-e for e in y})
+            .union(set(y).difference({-e for e in x}))
+        )
         z = clause(z)
         return z
+
 
 def preprocess(xs, limit=None, undo=False):
     """
@@ -321,7 +372,10 @@ def preprocess(xs, limit=None, undo=False):
                     z = resolve(x, y)
                     if z is not None:
                         for e in set(x).difference(set(z)):
-                            if sum(1 if e in w or -e in w else 0 for w in xs) == 2:
+                            if (
+                                sum(1 if e in w or -e in w else 0 for w in xs)
+                                == 2
+                            ):
                                 xs.remove(x)
                                 xs.remove(y)
                                 xs_.add(z)
@@ -347,6 +401,7 @@ def preprocess(xs, limit=None, undo=False):
             break
     return clean(xs)
 
+
 def clean(xs):
     for x in list(xs):
         for y in xs:
@@ -355,11 +410,12 @@ def clean(xs):
                 break
     return xs
 
-def tok(cl,r=3):
+
+def tok(cl, r=3):
     """
     cl is a set of clauses
     r >= 3
-    This function generates a set of clauses where the length of each clause 
+    This function generates a set of clauses where the length of each clause
     is at most r.
     """
     if not cl:
@@ -372,27 +428,31 @@ def tok(cl,r=3):
     for c in cl:
         c = clause(c)
         while len(c) > r:
-            c0 = clause(c[:r-1] + (i,))
-            c = clause(c[r-1:] + (-i,))
+            c0 = clause(c[:r - 1] + (i,))
+            c = clause(c[r - 1:] + (-i,))
             i += 1
             cln.add(c0)
         cln.add(c)
-    assert(all(len(x) <= r for x in cln))
+    assert all(len(x) <= r for x in cln)
     cll = cll.union(cln)
     return cll
 
-to3 = lambda cl: tok(cl,r=3)
+
+def to3(cl):
+    return tok(cl, r=3)
+
 
 def generate_assignment(n):
     """
     n = number of variables
     Generates a random assignment (a set of literals).
     """
-    r = list(range(1,n+1))
-    for i,e in enumerate(r):
-        if random.choice((True,False)):
+    r = list(range(1, n + 1))
+    for i, e in enumerate(r):
+        if random.choice((True, False)):
             r[i] = -e
     return set(r)
+
 
 def generate_assignment_from_set(vs):
     """
@@ -400,15 +460,16 @@ def generate_assignment_from_set(vs):
     Generates a random assignment (a set of literals).
     """
     r = list(vs)
-    for i,e in enumerate(r):
-        if random.choice((True,False)):
+    for i, e in enumerate(r):
+        if random.choice((True, False)):
             r[i] = -e
     return set(r)
+
 
 def generate_full(xs, j=2, k=3, exact=True, full=True):
     """
     xs is the set of clauses defining the solutions
-    Generates a set of clauses containing the given clauses as a solution 
+    Generates a set of clauses containing the given clauses as a solution
     (which may be empty).
     """
     vs = get_variables(xs)
@@ -416,16 +477,21 @@ def generate_full(xs, j=2, k=3, exact=True, full=True):
     for x in xs:
         if len(x) < k:
             for v in vs:
-                for e in [v,-v]:
+                for e in [v, -v]:
                     if e not in x and -e not in x:
                         y = add_element(x, e)
                         if y not in xs:
-                            cluster = {z for z in xs if {abs(f) for f in z} == {abs(f) for f in y}}
-                            if full or len(cluster) < 2**len(y)-1:
+                            cluster = {
+                                z
+                                for z in xs
+                                if {abs(f) for f in z} == {abs(f) for f in y}
+                            }
+                            if full or len(cluster) < 2 ** len(y) - 1:
                                 xs.append(y)
     if exact:
         return {x for x in xs if j <= len(x) <= k}
     return {x for x in xs if len(x) <= k}
+
 
 def generate_full_alt(a, j=2, k=3, full=False):
     """
@@ -437,7 +503,7 @@ def generate_full_alt(a, j=2, k=3, full=False):
     for x in xs:
         if len(x) < k:
             for v in vs:
-                for e in [v,-v]:
+                for e in [v, -v]:
                     if e not in x and -e not in x:
                         y = add_element(x, e)
                         if y not in xs:
@@ -445,13 +511,14 @@ def generate_full_alt(a, j=2, k=3, full=False):
                                 xs.append(y)
     return {x for x in xs if j <= len(x) <= k}
 
+
 def randomize_signs(xs):
     """
     Randomly flips signs maintaining the solutions as they were.
     """
     variables = list(sorted(get_variables(xs)))
     for v in variables:
-        if random.choice((0,1)):
+        if random.choice((0, 1)):
             xs_ = set()
             for x in xs:
                 if v in x:
@@ -465,6 +532,7 @@ def randomize_signs(xs):
             xs = xs_
     return xs
 
+
 def randomize_names(xs):
     """
     Randomly renames variables maintaining the solutions as they were.
@@ -472,25 +540,27 @@ def randomize_names(xs):
     variables = list(sorted(get_variables(xs)))
     new_variables = list(variables)
     random.shuffle(new_variables)
-    dv = {u: v for u,v in zip(variables, new_variables)}
-    for v,u in zip(new_variables,variables):
+    dv = {u: v for u, v in zip(variables, new_variables)}
+    for v, u in zip(new_variables, variables):
         dv[v] = u
     xs_ = set()
     for x in xs:
-        x = tuple(((e > 0) - (e < 0))*dv[abs(e)] for e in x)
-        x = tuple(sorted(x,key=abs))
+        x = tuple(((e > 0) - (e < 0)) * dv[abs(e)] for e in x)
+        x = tuple(sorted(x, key=abs))
         xs_.add(x)
     xs = xs_
     return xs
 
+
 def randomize(xs):
     """
-    Randomizes the content of the given clauses while maintaining structure 
+    Randomizes the content of the given clauses while maintaining structure
     (and solution structure).
     """
     xs = {clause(x) for x in xs}
     xs = randomize_signs(randomize_names(xs))
     return xs
+
 
 def randomize_order(variables):
     """
@@ -500,18 +570,24 @@ def randomize_order(variables):
     random.shuffle(variables)
     return tuple(variables)
 
-def random_instance(n,m,k):
+
+def random_instance(n, m, k):
     """
-    Generates a random instance targeted to have n variables, m clauses, 
+    Generates a random instance targeted to have n variables, m clauses,
     with clause length equal to k.
     """
     xs = set()
     counter = 0
     limit = 512
-    variables = tuple(range(1,1+n))
+    variables = tuple(range(1, 1 + n))
     while len(xs) < m:
         xs_ = set(xs)
-        xs.add(clause(random.choice((1,-1)) * v for v in randomize_order(variables)[:k]))
+        xs.add(
+            clause(
+                random.choice((1, -1)) * v
+                for v in randomize_order(variables)[:k]
+            )
+        )
         if xs_ == xs:
             counter += 1
         else:
@@ -520,34 +596,59 @@ def random_instance(n,m,k):
             break
     return variables, xs
 
-def rec_sat(xs, a = set()):
-    global I
-    I += 1
-    assert(not(any(-e in a for e in a)))
+
+def sat_two(xs):
+    global Global_Counter
     if not xs:
-        return True, a
-    if not(all(xs)):
+        return True, set()
+    if not all(xs):
         return False, None
-    m = min(len(z) for z in xs)
-    zs = {z for z in xs if len(z) <= m}
-    z = min(zs,key=lambda x:tuple(abs(e) for e in x))
-    for v in z:
-        xsv = {x for x in xs if v in x}
-        xsn = {x for x in xs if v not in x}
-        ands = {tuple(-e for e in x if e != v) for x in xsv}
-        ors = {tuple(e for e in x if e != -v) for x in xsn}
-        i = set.intersection(*(set(x) for x in ands))
-        ands = {tuple(e for e in x if e not in i) for x in ands}
-        for x in ands:
-             assert(-v not in x)
-             a_ = a.union({v}).union(x).union(i)
-             ors_ = {tuple(e for e in y if -e not in a_) for y in ors if not any(e in a_ for e in y)}
-             t,a_,_,ors_ = propagate(ors_, a_)
-             if t is not False:
-                t,s = rec_sat(ors_, a_)
-                if t:
-                    return t,s
+    aux = set()
+    while True:
+        Global_Counter += 1
+        t = set()
+        n = len(aux)
+        for x in sorted(xs.union(aux), key=lambda x:
+                        abs(min(x, key=abs)) if x else 0):
+            if not any(e in t for e in x):
+                for e in x:
+                    if -e in t:
+                        continue
+                    if not any(all(f in t.union({e}) for f in x)
+                               for x in xs.union(aux)):
+                        if not any(all(-f in t.union({e}) for f in x)
+                                   for x in xs.union(aux)):
+                            t.add(e)
+                            break
+            T, A, L, _ = propagate(xs.union(aux), t)
+            if T is False:
+                # Minimal t that caused conflict:
+                t_ = set(t)
+                while T is False and len(t) > 0:
+                    t_ = set(t)
+                    for e in list(t):
+                        t = set(t_)
+                        t.remove(e)
+                        T, A, L, _ = propagate(xs.union(aux), t)
+                        if T is True:
+                            return True, A
+                        if T is False:
+                            t_ = set(t)
+                if T is False:
+                    c = ()
+                else:
+                    c = clause(-e for e in t_)
+                aux.add(c)
+                print(f"\x1b[2K\x1b[95m\r{c}", end="")
+                continue
+            if T is True:
+                return True, A
+        if n == len(aux):
+            break
     return False, None
 
-def sat(xs, MaxRecSteps=None):
-    return rec_sat(xs)
+
+def sat(xs, MaxRecSteps=None, sat_=sat_two):
+    r = sat_(xs)
+    print()
+    return r
