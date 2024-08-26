@@ -1,39 +1,49 @@
 import random
-from sympy.logic.boolalg import And, Not, Xor, Equivalent
-from sympy.logic.boolalg import to_cnf
-from sympy import symbols
-from sympy import Symbol
+
+# Global to hold the approximate total number of top-level steps taken.
+Global_Counter = 0
 
 
 def add_element(x, e):
+    """Add element e to clause x."""
     return clause(set(x).union({e}))
 
 
 def clause(x):
+    """Make a clause (sorted tuple) of an iterable."""
     return tuple(sorted(set(x), key=abs))
 
 
 def complement_element(x, e):
+    """Negate element e of clause x."""
     return clause(set(x).difference({e}).union({-e}))
 
 
 def contains_any(x, xs):
+    """True if x includes all elements of y for some y in xs."""
     return any(all(e in x for e in y) for y in xs)
 
 
 def exclude_element(x, e):
+    """Exclude element e from clause x."""
     return tuple(f for f in x if f != e)
 
 
 def exclude_elements(x, es):
+    """Exclude all elements es from clause x."""
     return tuple(f for f in x if f not in es)
 
 
 def exclude_complement_elements(x, es):
+    """Exclude all negations of elements es from clause x."""
     return tuple(f for f in x if -f not in es)
 
 
 def exclude(xs, es):
+    """
+    Exclude all elements x in xs if any element of x is in es,
+    otherwise exclude all negations of elements es from x.
+    """
     return {
         exclude_complement_elements(x, es)
         for x in xs
@@ -42,16 +52,29 @@ def exclude(xs, es):
 
 
 def get_literals(xs):
+    """Return the set of literals in clauses xs."""
     assert xs
     return set.union(*(set(x) for x in xs))
 
 
 def get_variables(xs):
+    """Return the set of variables in clauses xs."""
     assert xs
     return set.union(*({abs(e) for e in x} for x in xs))
 
 
 def propagate(xs, assignment):
+    """
+    Perform a form of unit propagation given xs and an assignment.
+    return True, full_assignment, _, _ if no clauses remain with conflicts
+    return False, partial_assignment, _, _ if a conflict is found
+    return None, partial_assignment, literals, remaining_clauses
+    if partial status
+    In the last case a further (at least one) choice of
+    an assigned literal needs to be done to complete
+    the propagation to either True or False status.
+    The choice of next element is not made by this function.
+    """
     unit = set()
     value = None
     ls = set()
@@ -79,276 +102,10 @@ def propagate(xs, assignment):
     return value, assignment.union(unit), ls, xs
 
 
-def tuple_less_than(x, y):
-    return tuple(abs(e) for e in x) < tuple(abs(e) for e in y)
-
-
-Global_Counter = 0  # Global to hold the total number of recursive steps taken.
-
-
-def sat_(xs, MaxRecSteps=None):
-    if not xs:
-        return True, set()
-    if not all(xs):
-        return False, None
-    J = 0
-
-    def recursive(a=set()):
-        """
-        Recursive procedure for checking satisfiability.
-        """
-        global Global_Counter
-        nonlocal xs, J, MaxRecSteps
-        Global_Counter += 1
-        J += 1
-        print(f"\r{J}", end="")
-        if MaxRecSteps is not None and J >= MaxRecSteps:
-            raise ValueError
-        value, a, vs, xs_ = propagate(set(xs), a)
-        if value is True:
-            return True, a
-        if value is False:
-            return False, None
-        forced = {}
-        forced_by = {}
-        for v in vs:
-            if v not in forced:
-                forced[v] = set()
-            for x in xs_:
-                if -v in x:
-                    if len(x) <= 2:
-                        for e in x:
-                            if e != -v:
-                                forced[v].add(e)
-                if v in x:
-                    if v not in forced_by:
-                        forced_by[v] = set()
-                    forced_by[v].add(tuple(-e for e in x if e != v))
-        v = max(
-            vs,
-            key=lambda v: len(
-                set.intersection(*(set(y) for y in forced_by[v]))
-            ),
-        )
-        vs_ = {
-            u
-            for u in vs
-            if len(set.intersection(*(set(y) for y in forced_by[u])))
-            >= len(set.intersection(*(set(y) for y in forced_by[v])))
-        }
-        v = min(vs_, key=abs)
-        for v in (v, -v):
-            if v in vs:
-                i = set.intersection(*(set(y) for y in forced_by[v]))
-                a_ = a.union({v}).union(i).union(forced[v])
-                val, a_, _, _ = propagate(set(xs_), a_)
-                if val is True:
-                    return True, a_
-                elif val is None:
-                    r = recursive(a_)
-                    if r[0]:
-                        return r
-        return False, None
-
-    return recursive()
-
-
-def driver(Xs, t=6):
-    """
-    Applies the above recursive function a number of times in different
-    configurations of clauses.
-    Until an assignment is found or gives up when the set limit for number
-    of steps is hit.
-    """
-    global J
-    if type(Xs) != dict:
-        Xs = {0: Xs}
-    for u, xs in Xs.items():
-        if not xs:
-            return True, u
-    for u, xs in list(Xs.items()):
-        if not all(xs):
-            del Xs[u]
-    if not Xs:
-        return False, None
-    Variables = {}
-    N = {}
-    Symbols = {}
-    M = 0
-    for u, xs in Xs.items():
-        variables = list(sorted(get_variables(xs)))
-        Variables[u] = variables
-        n = len(variables)
-        N[u] = n
-        sm = symbols(" ".join(str(v) for v in variables))
-        if type(sm) == Symbol:
-            sm = (sm,)
-        Symbols[u] = sm
-        M = max(M, max(variables))
-    n = max(N.values())
-    """
-    The following section is inspired by the following blog post which explains
-      in some detail the practical application of the Valiant-Vazirani theorem:
-
-https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
-
-    All errors and misunderstandings in the following implementation are
-    entirely my own.
-    This code is also the reason why (a part of) the SymPy package is now
-    imported and required.
-    """
-    for k in range(0, n + 1):
-        for t_ in range(t):
-            for u in Xs:
-                """
-                This bit (iterating u's) is an addition where we check both
-                positive and negative literal one after the other on each step.
-                """
-                variables = Variables[u]
-                sm = Symbols[u]
-                n = N[u]
-                """
-                And back to limiting the number of assignments:
-                """
-                vectors = []
-                bits = []
-                for i in range(1, k + 3):
-                    vector = []
-                    for _ in range(n):
-                        vector.append(random.randint(0, 1))
-                    bit = random.randint(0, 1)
-                    vectors.append(vector)
-                    bits.append(bit)
-                aux = list(range(M + 1, M + 1 + n * (k + 2)))
-                sm_aux = symbols(" ".join(str(v) for v in aux))
-                sm_mapping = {}
-                for s, i in zip(sm, variables):
-                    sm_mapping[s] = i
-                for s, i in zip(sm_aux, aux):
-                    sm_mapping[s] = i
-                expression = True
-                for i, (vector, bit) in enumerate(zip(vectors, bits)):
-                    exr = None
-                    for j in range(n):
-                        x = sm[j]
-                        y = sm_aux[i * n + j]
-                        a = vector[j] > 0
-                        b = bit > 0
-                        if exr is None:
-                            exr = And(x, a)
-                        else:
-                            exr = Xor(sm_aux[i * n + j - 1], Xor(And(a, x), b))
-                        exr = Equivalent(y, exr)
-                    expression = And(expression, exr)
-                expression = to_cnf(expression)
-                if expression:
-                    ys = set()
-                    for clause in expression.args:
-                        y = []
-                        if type(clause) == Symbol:
-                            y.append(sm_mapping[clause])
-                        elif type(clause) == Not:
-                            y.append(-sm_mapping[clause.args[0]])
-                        else:
-                            for literal in clause.args:
-                                if type(literal) == Not:
-                                    y.append(-sm_mapping[literal.args[0]])
-                                else:
-                                    y.append(sm_mapping[literal])
-                        y = tuple(sorted(y, key=abs))
-                        ys.add(y)
-                    xs_ = Xs[u].union(ys)
-                    m = len(xs_)
-                    print(
-                        "\rt k",
-                        "\t",
-                        t_,
-                        "\t",
-                        k,
-                        "\t",
-                        m,
-                        "\t",
-                        len(xs_),
-                        "\t",
-                        len(Xs[u]),
-                        end="",
-                    )
-                    try:
-                        if (s := sat(xs_, m))[0]:
-                            print()
-                            return s
-                    except ValueError:
-                        pass
-    print()
-    return False, None
-
-
-def driver_wrapper(xs, variables=None):
-    """
-    Tries to generate a valid assignment, given one exists.
-    """
-    xs = {clause(x) for x in xs}
-    clauses = set(xs)
-    t = driver({0: preprocess(clauses)})
-    if t[0]:
-        variables = variables or list(sorted(get_variables(clauses)))
-        result = set()
-        for v in sorted(variables, key=abs):
-            Cs = {}
-            literals = list(sorted(get_literals(clauses), key=abs))
-            for u in [v, -v]:
-                if u in literals:
-                    cs = exclude(clauses, result.union({u}))
-                    Cs[u] = preprocess(cs)
-            if not Cs:
-                result.add(v)
-                continue
-            t = driver(Cs)
-            if t[0]:
-                u = t[1]
-                print("v", u)
-                result.add(u)
-            else:
-                print(Cs)
-                print(v)
-                raise ValueError
-        return result
-    return set()
-
-
-def wrapper(xs, variables=None):
-    """
-    Tries to generate a valid assignment, given one exists.
-    """
-    xs = {clause(x) for x in xs}
-    clauses = set(xs)
-    t = sat(clauses)
-    if t[0]:
-        variables = variables or list(sorted(get_variables(clauses)))
-        result = set()
-        for v in sorted(variables, key=abs):
-            if not clauses:
-                result.add(v)
-                continue
-            literals = list(sorted(get_literals(clauses), key=abs))
-            if v in literals:
-                cs = exclude(clauses, result.union({v}))
-                t = sat(cs)
-                if t[0]:
-                    print("v", v)
-                    result.add(v)
-                    clauses = cs
-                else:
-                    print("v", -v)
-                    result.add(-v)
-            else:
-                print("v", -v)
-                result.add(-v)
-        return result
-    return set()
-
-
 def resolve(x, y, lt=False):
+    """
+    Resolve two clauses (x and y) together if possible.
+    """
     if (s := sum(1 if -e in x else 0 for e in y)) == 1 or lt and s <= 1:
         z = (
             set(x)
@@ -359,31 +116,14 @@ def resolve(x, y, lt=False):
         return z
 
 
-def preprocess(xs, limit=None, undo=False):
+def preprocess(xs, limit=None, rounds=None):
     """
-    Undo the process of the to3 (tok) function(s).
+    Preprocess (resolve) clauses.
     """
     xs = set(xs)
-    while undo:
-        xs_ = set()
-        for x in list(xs):
-            for y in list(xs):
-                if x in xs and y in xs:
-                    z = resolve(x, y)
-                    if z is not None:
-                        for e in set(x).difference(set(z)):
-                            if (
-                                sum(1 if e in w or -e in w else 0 for w in xs)
-                                == 2
-                            ):
-                                xs.remove(x)
-                                xs.remove(y)
-                                xs_.add(z)
-                                break
-        xs = xs.union(xs_)
-        if not xs_:
-            break
-    while True:
+    while rounds is None or rounds > 0:
+        if rounds is not None:
+            rounds -= 1
         xs_ = set()
         remove = set()
         for x in xs:
@@ -403,6 +143,9 @@ def preprocess(xs, limit=None, undo=False):
 
 
 def clean(xs):
+    """
+    Remove redundant clauses.
+    """
     for x in list(xs):
         for y in xs:
             if x != y and all(e in x for e in y):
@@ -439,6 +182,7 @@ def tok(cl, r=3):
 
 
 def to3(cl):
+    """Return clauses with length at most three."""
     return tok(cl, r=3)
 
 
@@ -597,58 +341,99 @@ def random_instance(n, m, k):
     return variables, xs
 
 
-def sat_two(xs):
+def sat(xs, **kwargs):
+    """
+    Main sat solving function in this module.
+    xs is a set of clauses (tuples sorted by absolute value of elements).
+    """
     global Global_Counter
-    if not xs:
-        return True, set()
-    if not all(xs):
-        return False, None
-    aux = set()
-    while True:
-        Global_Counter += 1
-        t = set()
-        n = len(aux)
-        for x in sorted(xs.union(aux), key=lambda x:
-                        abs(min(x, key=abs)) if x else 0):
-            if not any(e in t for e in x):
-                for e in x:
-                    if -e in t:
-                        continue
-                    if not any(all(f in t.union({e}) for f in x)
-                               for x in xs.union(aux)):
-                        if not any(all(-f in t.union({e}) for f in x)
-                                   for x in xs.union(aux)):
-                            t.add(e)
-                            break
-            T, A, L, _ = propagate(xs.union(aux), t)
-            if T is False:
+    try:
+        xs = set(xs)
+        if not xs:
+            return True, set()
+        if not all(xs):
+            return False, None
+        auxiliary_clauses = set()
+        variables = list(sorted(get_variables(xs)))
+        literals = list(sorted(get_literals(xs), key=abs))
+        if kwargs.get("preprocess", False):
+            xs = preprocess(xs, rounds=3, limit=None)
+        final_assignments = set()
+        while () not in auxiliary_clauses:
+            Global_Counter += 1
+            # auxiliary_clauses = preprocess(auxiliary_clauses, rounds=3)
+            for x in auxiliary_clauses:
+                if len(x) <= 1:
+                    for e in x:
+                        final_assignments.add(e)
+                        if abs(e) in variables:
+                            variables.remove(abs(e))
+                        if e in literals:
+                            literals.remove(e)
+                        if -e in literals:
+                            literals.remove(-e)
+            temporary_assignment = set()
+            for e in literals:
+                if -e in temporary_assignment:
+                    continue
+                if not any(
+                       all(f in temporary_assignment.union({e}) for f in x)
+                       for x in xs.union(auxiliary_clauses)):
+                    if not any(
+                           all(-f in temporary_assignment.union({e}) for
+                               f in x)
+                           for x in xs.union(auxiliary_clauses)):
+                        temporary_assignment.add(e)
+            Truth, Assignment, _, _ = propagate(xs.union(
+                                auxiliary_clauses),
+                                temporary_assignment)
+            if Truth is False:
                 # Minimal t that caused conflict:
-                t_ = set(t)
-                while T is False and len(t) > 0:
-                    t_ = set(t)
-                    for e in list(t):
-                        t = set(t_)
-                        t.remove(e)
-                        T, A, L, _ = propagate(xs.union(aux), t)
-                        if T is True:
-                            return True, A
-                        if T is False:
-                            t_ = set(t)
-                if T is False:
-                    c = ()
-                else:
-                    c = clause(-e for e in t_)
-                aux.add(c)
-                print(f"\x1b[2K\x1b[95m\r{c}", end="")
-                continue
-            if T is True:
-                return True, A
-        if n == len(aux):
-            break
-    return False, None
-
-
-def sat(xs, MaxRecSteps=None, sat_=sat_two):
-    r = sat_(xs)
-    print()
-    return r
+                tmp_processed_assignments = set()
+                tmp_as = set(temporary_assignment)
+                tmp_assignments = [temporary_assignment]
+                while tmp_assignments:
+                    m = min(len(x) for x in tmp_assignments)
+                    tmp_assignments = [x for x in tmp_assignments
+                                       if len(x) <= m]
+                    temporary_assignment = tmp_assignments.pop()
+                    tmp_processed_assignments.add(
+                        frozenset(temporary_assignment))
+                    tmp_as = set(temporary_assignment)
+                    for e in list(temporary_assignment):
+                        temporary_assignment = set(tmp_as)
+                        temporary_assignment.remove(e)
+                        c = clause(-e for e in
+                                   temporary_assignment)
+                        if c not in auxiliary_clauses and \
+                            not any(
+                                all(f in c for f in d)
+                                for d in auxiliary_clauses):
+                            Truth, Assignment, _, _ = \
+                                propagate(xs.union(
+                                    auxiliary_clauses),
+                                    temporary_assignment)
+                            if Truth is True:
+                                return True, Assignment
+                            if Truth is False:
+                                tmp_as = \
+                                    set(temporary_assignment)
+                                if frozenset(temporary_assignment) not in \
+                                        tmp_processed_assignments:
+                                    tmp_assignments.append(
+                                        temporary_assignment)
+                m = min(len(x) for x in tmp_processed_assignments)
+                tmp_processed_assignments = [x for x in
+                                             tmp_processed_assignments if
+                                             len(x) <= m]
+                for tmp_as in tmp_processed_assignments:
+                    c = clause(-e for e in tmp_as)
+                    auxiliary_clauses.add(c)
+                    line_to_print = \
+                        f"\x1b[2K\x1b[95m\r{Global_Counter}\t{c}"
+                    print(line_to_print, end="")
+            if Truth is True:
+                return True, Assignment
+        return False, None
+    finally:
+        print()
