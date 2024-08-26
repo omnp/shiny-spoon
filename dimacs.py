@@ -13,10 +13,10 @@ def parse_dimacs(text):
 				continue
 			elif line[0] == 'p':
 				print(line)
-				items = re.split('\s+', line)
+				items = re.split('\\s+', line)
 				m = int(items[3].strip())
 			else:
-				items = [int(x.strip()) for x in re.split('\s+', line)]
+				items = [int(x.strip()) for x in re.split('\\s+', line)]
 				clause = tuple(items[:-1])
 				if items[-1] != 0:
 					raise ValueError("dimacs ParseError: unexpected token")
