@@ -352,131 +352,32 @@ def partials(x):
         yield r
 
 
+def sat_wrapped(xs, assignment=set(), **kwargs):
+    global Global_Counter
+    Global_Counter += 1
+    truth, assignment, literals, xs_ = propagate(set(xs), assignment)
+    if truth is True:
+        return assignment
+    if truth is False:
+        return None
+    if not any(e > 0 for e in literals):
+        return assignment.union(literals)
+    literals = {e for e in literals if e > 0}
+    e = min(literals)
+    x = min({x for x in xs_ if e in x}, key=len)
+    for i, e in enumerate(x):
+        if not any(all(-f in assignment.union({e}) for f in y) for y in xs): 
+            s = sat_wrapped(
+                xs, assignment.union({e}).union({-e for e in x[:i]}))
+            if s is not None:
+                return s
+    return None
+
+
 def sat(xs, **kwargs):
     """
     Main sat solving function in this module.
     xs is a set of clauses (tuples sorted by absolute value of element)
     """
-    global Global_Counter
-    try:
-        xs = set(xs)
-        if not xs:
-            return True, set()
-        if not all(xs):
-            return False, None
-        auxiliary_clauses = set()
-        if kwargs.get("preprocess", False):
-            xs = preprocess(xs, rounds=3, limit=None)
-        final_assignments = set()
-        temporary_assignment = set()
-        temporary_assignments = [temporary_assignment]
-        tmp_processed_assignments_all = set()
-        variables = get_variables(xs)
-        variables = list(sorted(variables))
-        for e in variables:
-            line_to_print = \
-                f"\x1b[2K\x1b[95m\r{Global_Counter}\t{e}"
-            print(line_to_print, end="")
-            Global_Counter += 1
-            auxiliary_clauses = preprocess(auxiliary_clauses, rounds=3)
-            T, final_assignments, _, _ = propagate(set(
-                auxiliary_clauses).union(xs),
-                final_assignments)
-            T, final_assignments, _, xs = propagate(set(xs),
-                                                    final_assignments)
-            if T is True:
-                return True, final_assignments
-            if T is False:
-                return False, None
-            temporary_assignments_new = []
-            for temporary_assignment in temporary_assignments:
-                copy_of_temporary_assignment = set(temporary_assignment)
-                for h in (e, -e):
-                    temporary_assignment = \
-                        copy_of_temporary_assignment.union({h})
-                    if -h in temporary_assignment:
-                        continue
-                    if not any(all(-f in temporary_assignment for
-                               f in x) for x in xs.union(auxiliary_clauses)):
-                        Truth, Assignment, _, _ = propagate(xs.union(
-                            auxiliary_clauses),
-                            temporary_assignment.union(
-                                final_assignments))
-                        if Truth is False:
-                            tmp_processed_assignments_all.add(
-                                frozenset(temporary_assignment))
-                            continue
-                        if Truth is True:
-                            return True, Assignment
-                        if temporary_assignment not in \
-                                temporary_assignments_new:
-                            temporary_assignments_new.append(
-                                temporary_assignment)
-            temporary_assignments = temporary_assignments_new
-            if tmp_processed_assignments_all:
-                tmp_processed_assignments_final = set()
-                for temporary_assignment in tmp_processed_assignments_all:
-                    # Minimal t that caused conflict:
-                    tmp_as = set(temporary_assignment)
-                    tmp_assignments = [temporary_assignment]
-                    tmp_processed_assignments = set()
-                    while tmp_assignments:
-                        m = min(len(x) for x in tmp_assignments)
-                        tmp_assignments = [x for x in tmp_assignments
-                                           if len(x) <= m]
-                        temporary_assignment = tmp_assignments.pop()
-                        tmp_processed_assignments.add(
-                            frozenset(temporary_assignment))
-                        tmp_processed_assignments_final.add(
-                            frozenset(temporary_assignment))
-                        tmp_as = set(temporary_assignment)
-                        for e in list(temporary_assignment):
-                            temporary_assignment = set(tmp_as)
-                            temporary_assignment.remove(e)
-                            c = clause(-e for e in
-                                       temporary_assignment)
-                            if c not in auxiliary_clauses and \
-                                not any(
-                                    all(f in c for f in d)
-                                    for d in auxiliary_clauses):
-                                Truth, Assignment, _, _ = \
-                                    propagate(xs.union(
-                                        auxiliary_clauses),
-                                        temporary_assignment.union(
-                                            final_assignments))
-                                if Truth is True:
-                                    return True, Assignment
-                                if Truth is False:
-                                    tmp_as = \
-                                        set(temporary_assignment)
-                                    if frozenset(
-                                        temporary_assignment) \
-                                            not in \
-                                            tmp_processed_assignments:
-                                        if frozenset(
-                                            temporary_assignment) \
-                                                not in \
-                                                tmp_assignments:
-                                            tmp_assignments.append(
-                                                temporary_assignment)
-                m = min(len(x) for x in tmp_processed_assignments_final)
-                tmp_processed_assignments_final = \
-                    [x for x in tmp_processed_assignments_final if
-                     len(x) <= m]
-                for tmp_as in tmp_processed_assignments_final:
-                    c = clause(-e for e in tmp_as)
-                    auxiliary_clauses.add(c)
-                    line_to_print = \
-                        f"\x1b[2K\x1b[95m\r{Global_Counter}\t{c}"
-                    print(line_to_print, end="")
-                tmp_processed_assignments_all = set()
-            for temporary_assignment in list(temporary_assignments):
-                if not any(all(-f in temporary_assignment for
-                               f in x) for x in xs.union(auxiliary_clauses)):
-                    pass
-                else:
-                    temporary_assignments.remove(temporary_assignment)
-            temporary_assignments = clean(temporary_assignments)
-        return False, None
-    finally:
-        print()
+    s = sat_wrapped(xs)
+    return s is not None, s
