@@ -1,15 +1,17 @@
 import random
-import sat
 import sys
+import dimacs
+import php
+import waerden
+import sat
 
 random.seed(1)
 if len(sys.argv) > 1:
     if len(sys.argv) > 2:
-        import php
-        m,n = sys.argv[1:3]
-        m,n = int(m),int(n)
-        clauses = php.php(m,n)
-        print('PHP:{}x{}'.format(m,n))
+        m, n = sys.argv[1:3]
+        m, n = int(m), int(n)
+        clauses = php.php(m, n)
+        print('PHP:{}x{}'.format(m, n))
         print(len(clauses))
         variables = sat.get_variables(clauses)
         print(len(clauses), len(variables))
@@ -28,7 +30,6 @@ if len(sys.argv) > 1:
                 print(e)
                 exit()
     else:
-        import dimacs
         filename = sys.argv[1]
         with open(filename) as file:
             text = file.read()
@@ -54,45 +55,58 @@ if len(sys.argv) > 1:
     exit()
 
 """
-Making an instance and processing it. 
-Steps outlined below in the doc string.
+Making a few instances and processing them.
 """
 
-variables = set(range(1,7))
-xs = sat.generate_full_alt(variables,j=4,k=4,full=True)
+variables = set(range(1, 7))
+xs = sat.generate_full_alt(variables, j=4, k=4, full=True)
 variables_ = sat.get_variables(xs)
 while len(xs) > 1:
     sat.Global_Counter = 0
-    r = tuple(random.choice((1,-1)) * v for v in sorted(variables_))
+    r = tuple(random.choice((1, -1)) * v for v in sorted(variables_))
     xs = {x for x in xs if not all(-e in r for e in x)}
     xs_ = sat.to3(xs)
-    print(len(xs_),len(sat.get_variables(xs)))
+    print(len(xs_), len(sat.get_variables(xs)))
     print(sat.sat(xs)[0])
     print(sat.Global_Counter)
 
-N = 7
-for n in range(1,1+N):
+N = 7  # 9
+for n in range(1, 1+N):
     print(f'Number of variables: {n}')
-    variables = set(range(1,1+n))
-    m = n#3
-    xs = sat.generate_full_alt(variables, j=min(n,m),k=min(n,m),full=True)
+    variables = set(range(1, 1+n))
+    m = n  # 3
+    xs = sat.generate_full_alt(variables, j=min(n, m), k=min(n, m), full=True)
     xs_ = set()
     K = 0
     Min = None
-    Max = None 
-    for i,x in enumerate(xs):
+    Max = None
+    xs.pop()  # <-- NOTE
+    for i, x in enumerate(xs):
         xs_.add(x)
         sat.Global_Counter = 0
         sat.sat(sat.randomize(set(xs_)))
         K += sat.Global_Counter
-        Min = sat.Global_Counter if Min is None else min(Min, sat.Global_Counter)
-        Max = sat.Global_Counter if Max is None else max(Max, sat.Global_Counter)
-        print(f'\r\t{i}\tSteps taken {sat.Global_Counter} {sat.Global_Counter/len(xs_)}', end='')
-    print(f'\nAverage recursive steps taken and minimum and maximum: {K/len(xs)} {Min} {Max}')
+        Min = sat.Global_Counter if Min is None else min(
+            Min, sat.Global_Counter)
+        Max = sat.Global_Counter if Max is None else max(
+            Max, sat.Global_Counter)
+        print(f'\r\t{i}\tSteps taken {sat.Global_Counter} {
+              sat.Global_Counter/len(xs_)}', end='')
+    print(f'\nAverage recursive steps taken and minimum and maximum: {
+          K/len(xs)} {Min} {Max}')
 
-import waerden
-xs = waerden.waerden(4,5,55)#(3,5,22)
+xs = waerden.waerden(3, 5, 21)  # (4,5,54)#(3,5,22)
 sat.Global_Counter = 0
 variables = sat.get_variables(xs)
 print(len(xs), len(variables))
 print(sat.sat(set(xs))[0], sat.Global_Counter)
+
+xs = php.php(5, 5)
+while True:
+    sat.Global_Counter = 0
+    s = sat.sat(xs)
+    v = sat.get_variables(xs)
+    print(len(xs), len(sat.get_variables(xs)), s[0], sat.Global_Counter)
+    if not s[0]:
+        break
+    xs.add(sat.clause(-e for e in s[1] if abs(e) in v))
