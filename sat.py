@@ -1,4 +1,8 @@
 import random
+from sympy.logic.boolalg import And, Not, Xor, Equivalent
+from sympy.logic.boolalg import to_cnf
+from sympy import symbols
+from sympy import Symbol
 
 # Global to hold the approximate total number of top-level steps taken.
 Global_Counter = 0
@@ -81,14 +85,15 @@ def propagate(xs, assignment):
     while True:
         if any(-e in assignment.union(unit) for e in assignment.union(unit)):
             value = False
-            break
+            # break
         xs = exclude(xs, assignment.union(unit))
         if not xs:
-            value = True
+            if value is None:
+                value = True
             break
         if not all(xs):
             value = False
-            break
+            # break
         ls = get_literals(xs)
         unit_ = {e for e in ls if -e not in ls}
         for x in xs:
@@ -120,7 +125,7 @@ def preprocess(xs, limit=None, rounds=None):
     """
     Preprocess (resolve) clauses.
     """
-    xs = set(xs)
+    # xs = set(xs)
     while rounds is None or rounds > 0:
         if rounds is not None:
             rounds -= 1
@@ -129,14 +134,20 @@ def preprocess(xs, limit=None, rounds=None):
         for x in xs:
             for y in xs:
                 z = resolve(x, y)
-                if z is not None and (limit is None or len(z) <= limit):
-                    if all(e in x for e in z):
-                        remove.add(x)
-                        xs_.add(z)
-                    if all(e in y for e in z):
-                        remove.add(y)
-                        xs_.add(z)
-        xs = xs.union(xs_).difference(remove)
+                if z is not None:
+                    if not any(all(-e in z for e in w) for w in xs):
+                        if limit is None or len(z) <= limit:
+                            if all(e in x for e in z):
+                                remove.add(x)
+                                xs_.add(z)
+                            if all(e in y for e in z):
+                                remove.add(y)
+                                xs_.add(z)
+        # xs = xs.union(xs_).difference(remove)
+        for x in xs_:
+            xs.add(x)
+        for x in remove:
+            xs.remove(x)
         if not xs_:
             break
     return clean(xs)
@@ -349,29 +360,181 @@ def partials(x):
             if i & 1:
                 r[j] = -e
             i >>= 1
-        yield r
+        yield clause(r)
 
 
-def sat_wrapped(xs, assignment=set(), **kwargs):
+def product(xs):
+    r = 1
+    for x in xs:
+        r *= x
+    return r
+
+
+def sharp_sat_enumerate(xs, a=set(), only_one=True,
+                        learned=set(), limit=[1000]):
     global Global_Counter
     Global_Counter += 1
-    truth, assignment, literals, xs_ = propagate(set(xs), assignment)
-    if truth is True:
-        return assignment
-    if truth is False:
-        return None
-    if not any(e > 0 for e in literals):
-        return assignment.union(literals)
-    literals = {e for e in literals if e > 0}
-    e = min(literals)
-    x = min({x for x in xs_ if e in x}, key=len)
-    for i, e in enumerate(x):
-        if not any(all(-f in assignment.union({e}) for f in y) for y in xs): 
-            s = sat_wrapped(
-                xs, assignment.union({e}).union({-e for e in x[:i]}))
-            if s is not None:
-                return s
-    return None
+    if all(any(e in a for e in x) for x in xs):
+        yield a
+    else:
+        limit[0] -= 1
+        if limit[0] < 0:
+            return
+        t, a_, v, xs_ = propagate(set(xs).union(learned), set(a))
+        if t is False:
+            learned.add(clause(-e for e in a))
+            learned_ = list(learned)
+            for x in learned_:
+                if x in learned:
+                    learned.remove(x)
+                count = 0
+                for y in list(xs):
+                    if (z := resolve(x, y)) is not None:
+                        if len(z) <= len(y):
+                            count += 1
+                            if not z:
+                                return
+                            if z not in learned_:
+                                learned_.append(z)
+                if count <= 0:
+                    if len(x) <= max(len(z) for z in xs):
+                        xs.add(x)
+            clean(xs)
+            return
+        if t is True:
+            yield a_
+            if only_one:
+                return
+        if t is None:
+            a__ = a
+            a = a_
+            e = min(v, key=lambda e:
+                    product(1/len(x) if e in x else 1 for x in xs))
+            es = (e, -e)
+            for e_ in es:
+                a_ = a.union({e_})
+                if not any(all(-e in a_ for e in x)
+                           for x in xs.union(learned)):
+                    s = sharp_sat_enumerate(xs, a_, only_one, learned, limit)
+                    for x in s:
+                        yield x
+                        if only_one:
+                            return
+                a.add(-e_)
+            learned.add(clause(-e for e in a__))
+
+
+def driver(Xs, t=6, limit=1000):
+    """
+    Applies the above recursive function a number of times in different
+    configurations of clauses.
+    Until an assignment is found or gives up when the set limit for number
+    of steps is hit.
+    """
+    if not isinstance(Xs, dict):
+        Xs = {0: Xs}
+    for u, xs in Xs.items():
+        if not xs:
+            return True, u
+    for u, xs in list(Xs.items()):
+        if not all(xs):
+            del Xs[u]
+    if not Xs:
+        return False, None
+    Variables = {}
+    N = {}
+    Symbols = {}
+    M = 0
+    for u, xs in Xs.items():
+        variables = list(sorted(get_variables(xs)))
+        Variables[u] = variables
+        n = len(variables)
+        N[u] = n
+        sm = symbols(" ".join(str(v) for v in variables))
+        if isinstance(sm, Symbol):
+            sm = (sm,)
+        Symbols[u] = sm
+        M = max(M, max(variables))
+    n = max(N.values())
+    """
+    The following section is inspired by the following blog post which explains
+      in some detail the practical application of the Valiant-Vazirani theorem:
+
+https://lucatrevisan.wordpress.com/2010/04/29/cs254-lecture-7-valiant-vazirani/
+
+    All errors and misunderstandings in the following implementation are
+    entirely my own.
+    This code is also the reason why (a part of) the SymPy package is now
+    imported and required.
+    """
+    for k in range(0, n + 1):
+        for t_ in range(t):
+            for u in Xs:
+                """
+                This bit (iterating u's) is an addition where we check both
+                positive and negative literal one after the other on each step.
+                """
+                variables = Variables[u]
+                sm = Symbols[u]
+                n = N[u]
+                """
+                And back to limiting the number of assignments:
+                """
+                vectors = []
+                bits = []
+                for i in range(1, k + 3):
+                    vector = []
+                    for _ in range(n):
+                        vector.append(random.randint(0, 1))
+                    bit = random.randint(0, 1)
+                    vectors.append(vector)
+                    bits.append(bit)
+                aux = list(range(M + 1, M + 1 + n * (k + 2)))
+                sm_aux = symbols(" ".join(str(v) for v in aux))
+                sm_mapping = {}
+                for s, i in zip(sm, variables):
+                    sm_mapping[s] = i
+                for s, i in zip(sm_aux, aux):
+                    sm_mapping[s] = i
+                expression = True
+                for i, (vector, bit) in enumerate(zip(vectors, bits)):
+                    exr = None
+                    for j in range(n):
+                        x = sm[j]
+                        y = sm_aux[i * n + j]
+                        a = vector[j] > 0
+                        b = bit > 0
+                        if exr is None:
+                            exr = And(x, a)
+                        else:
+                            exr = Xor(sm_aux[i * n + j - 1], Xor(And(a, x), b))
+                        exr = Equivalent(y, exr)
+                    expression = And(expression, exr)
+                expression = to_cnf(expression)
+                if expression:
+                    ys = set()
+                    for clause in expression.args:
+                        y = []
+                        if isinstance(clause, Symbol):
+                            y.append(sm_mapping[clause])
+                        elif isinstance(clause, Not):
+                            y.append(-sm_mapping[clause.args[0]])
+                        else:
+                            for literal in clause.args:
+                                if isinstance(literal, Not):
+                                    y.append(-sm_mapping[literal.args[0]])
+                                else:
+                                    y.append(sm_mapping[literal])
+                        y = tuple(sorted(y, key=abs))
+                        ys.add(y)
+                    xs_ = Xs[u].union(ys)
+                    try:
+                        if (s := list(sharp_sat_enumerate(xs_, only_one=True,
+                                                          limit=[limit]))):
+                            return True, s
+                    except ValueError:
+                        pass
+    return False, None
 
 
 def sat(xs, **kwargs):
@@ -379,5 +542,9 @@ def sat(xs, **kwargs):
     Main sat solving function in this module.
     xs is a set of clauses (tuples sorted by absolute value of element)
     """
-    s = sat_wrapped(xs)
-    return s is not None, s
+    global Global_Counter
+    xs = set(xs)
+    r = driver(xs, 7, limit=1000)
+    if r[0]:
+        return True, r[1][0]
+    return False, None
