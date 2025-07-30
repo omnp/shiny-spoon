@@ -34,6 +34,9 @@ if __name__ == '__main__':
         counter += 1
         if s is None:
             s = set()
+        xs_orig = xs
+        s_orig = s
+        xs = sat.exclude(set(xs_orig), s_orig)
         if not xs:
             return s
         if not all(xs):
@@ -49,11 +52,10 @@ if __name__ == '__main__':
                 if v is None or abs(e) < abs(v):
                     v = e
         vs = [v] + ([] if -v not in vs else [-v])
-        xs__ = set(xs)
-        s__ = set(s)
         for v in vs:
             from_v = []
             to_v = []
+            xs = sat.exclude(set(xs_orig), s_orig)
             for x in xs:
                 if -v in x:
                     if x != (-v,):
@@ -64,11 +66,11 @@ if __name__ == '__main__':
             print("v", v)
             # print("from_v", from_v)
             # print("to_v", to_v)
-            xs_ = set(xs__).union(from_v)
-            s_ = s__.union({v})
             if to_v:
                 for elems in to_v:
-                    xs = set(xs_)
+                    xs_ = sat.exclude(set(xs_orig), s_orig).union(from_v)
+                    s_ = set(s_orig).union({v})
+                    xs = xs_
                     from_from_v = set()
                     for fr in from_v:
                         t = set()
@@ -98,19 +100,22 @@ if __name__ == '__main__':
                     value, s, _, xs = sat.propagate(xs, s)
                     if value is False:
                         continue
-                    r = rec(xs, s)
+                    del xs_
+                    del xs
+                    r = rec(xs_orig, s)
                     if r is not None and not any(-e in r for e in r):
                         return r
             else:
-                xs = set(xs_)
-                s = set(s_)
+                xs = sat.exclude(set(xs_orig), s_orig).union(from_v)
+                s = set(s_orig).union({v})
                 for x in xs:
                     if len(x) <= 1:
                         s = s.union(set(x))
                 value, s, _, xs = sat.propagate(xs, s)
                 if value is False:
                     continue
-                r = rec(xs, s)
+                del xs
+                r = rec(xs_orig, s)
                 if r is not None and not any(-e in r for e in r):
                     return r
         return None
