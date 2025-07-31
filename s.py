@@ -26,7 +26,6 @@ if __name__ == '__main__':
             s = f.read()
             _, xs = dimacs.parse_dimacs(s)
             f.close()
-    xs = sat.to3(xs)
     counter = 0
 
     def rec(xs, s=None):
@@ -43,7 +42,7 @@ if __name__ == '__main__':
             xs = set(xs_orig)
             s = s_orig
             value, s, _, xs = sat.propagate(xs, s)
-            print("v", v)
+            print(f"\x1b[2K\rStep {counter}\t | v: {v}", end="")
             if not xs:
                 assert not any(-e in s for e in s)
                 return s
@@ -130,8 +129,18 @@ if __name__ == '__main__':
                         s_all.append(s)
         return None
 
-    r = rec(set(xs))
-    print(r)
-    print(r is not None and all(any(e in r for e in x) for x in xs))
-    print(counter)
-    print(len(xs), len(sat.get_variables(xs)))
+    vs = sat.get_variables(xs)
+    while True:
+        counter = 0
+        xs_ = sat.to3(xs)
+        r = rec(set(xs_))
+        if r is not None:
+            r = {e for e in r if abs(e) in vs}
+        print(f"\x1b[2K\r{r}")
+        print(r is not None and all(any(e in r for e in x) for x in xs))
+        print(counter)
+        print(len(xs_), len(sat.get_variables(xs_)))
+        if r is not None:
+            xs.add(tuple(sorted({-e for e in r}, key=abs)))
+        else:
+            break
