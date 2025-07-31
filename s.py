@@ -1,5 +1,6 @@
 
 if __name__ == '__main__':
+    import random
     import php
     import sat
     import dimacs
@@ -19,7 +20,8 @@ if __name__ == '__main__':
         else:
             # xs = waerden.waerden(4, 5, 55)
             # xs = waerden.waerden(4, 5, 54)
-            xs = waerden.waerden(3, 5, 22)
+            xs = waerden.waerden(3, 5, 21)  # 22
+            # xs = waerden.waerden(4, 6, 72)  # 73
     else:
         xs = None
         with open("examples/factoring2017-0004.dimacs") as f:
@@ -28,6 +30,25 @@ if __name__ == '__main__':
             f.close()
     counter = 0
 
+    def from_from(xs, from_v, limit=None):
+        if limit is not None:
+            limit -= 1
+            if limit <= 0:
+                return from_v
+        from_from_v = set()
+        for fr in from_v:
+            t = set()
+            for e in fr:
+                for x in xs:
+                    if -e in x:
+                        t = t.union((f for f in x if f != -e))
+            t = tuple(sorted(t, key=abs))
+            if t and t not in from_v:
+                from_from_v.add(t)
+        if from_from_v:
+            return from_from(xs, from_v.union(from_from_v), limit)
+        return from_v.union(from_from_v)
+
     def rec(xs, s=None):
         global counter
         if s is None:
@@ -35,7 +56,6 @@ if __name__ == '__main__':
         xs_orig = xs
         s_orig = s
         s_list = [(s, 0)]
-        s_all = [s]
         while s_list:
             counter += 1
             s_orig, v = s_list.pop()
@@ -43,6 +63,8 @@ if __name__ == '__main__':
             s = s_orig
             value, s, _, xs = sat.propagate(xs, s)
             print(f"\x1b[2K\rStep {counter}\t | v: {v}", end="")
+            if value is False:
+                continue
             if not xs:
                 assert not any(-e in s for e in s)
                 return s
@@ -72,23 +94,12 @@ if __name__ == '__main__':
                     if v in x:
                         if x != (v,):
                             to_v.append(set(-e for e in x if e != v))
-                # print("v", v)
-                # print("from_v", from_v)
-                # print("to_v", to_v)
+                from_from_v = from_from(xs, set(from_v), 3)
                 if to_v:
                     for elems in reversed(to_v):
                         xs_ = set(xs__).union(from_v)
                         s_ = set(s__).union({v})
                         xs = xs_
-                        from_from_v = set()
-                        for fr in from_v:
-                            t = set()
-                            for e in fr:
-                                for x in xs:
-                                    if -e in x:
-                                        t = t.union((f for f in x if f != -e))
-                            if t:
-                                from_from_v.add(tuple(sorted(t, key=abs)))
                         to_to_v = set()
                         for e in elems:
                             t = set()
@@ -97,9 +108,6 @@ if __name__ == '__main__':
                                     t = t.union((-f for f in x if f != e))
                             if t:
                                 to_to_v.add(tuple(sorted(t, key=abs)))
-                        # print("elems", elems)
-                        # print("from_from_v", from_from_v)
-                        # print("to_to_v", to_to_v)
                         xs = xs_.union({(e,) for e in elems}).union(from_from_v).union(to_to_v)
                         s = set(s_)
                         for x in xs:
@@ -111,28 +119,14 @@ if __name__ == '__main__':
                             continue
                         del xs_
                         del xs
-                        if s not in s_all:
+                        if (s, v) not in s_list:
                             s_list.append((s, v))
-                            s_all.append(s)
-                else:
-                    xs = set(xs__).union(from_v)
-                    s = set(s__).union({v})
-                    for x in xs:
-                        if len(x) <= 1:
-                            s = s.union(set(x))
-                    value, s, _, xs = sat.propagate(xs, s)
-                    if value is False:
-                        continue
-                    del xs
-                    if s not in s_all:
-                        s_list.append((s, v))
-                        s_all.append(s)
         return None
 
     vs = sat.get_variables(xs)
     while True:
         counter = 0
-        xs_ = sat.to3(xs)
+        xs_ = set(xs)  # sat.to3(xs)
         r = rec(set(xs_))
         if r is not None:
             r = {e for e in r if abs(e) in vs}
@@ -141,6 +135,19 @@ if __name__ == '__main__':
         print(counter)
         print(len(xs_), len(sat.get_variables(xs_)))
         if r is not None:
-            xs.add(tuple(sorted({-e for e in r}, key=abs)))
+            # xs.add(tuple(sorted({-e for e in r}, key=abs)))
+            limit = 4
+            t = set()
+            while limit:
+                tries = 16
+                while tries:
+                    e = random.choice(list(r))
+                    t_ = t.union({-e})
+                    if not any(all(f in t_ for f in x) for x in xs):
+                        t = t_
+                        break
+                    tries -= 1
+                limit -= 1
+            xs.add(sat.clause(t))
         else:
             break
