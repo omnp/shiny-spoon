@@ -11,15 +11,10 @@ if __name__ == '__main__':
 
     if not use_dimacs:
         if not use_waerden:
-            # n = 128
             n = 24
             xs = php.php(n, n)
-            # xs = php.php(n, 2*n)
-            # xs = {(1, 2, 3), (-2, -3, 4), (-1, 3, -4)}
-            # xs = sat.randomize(xs)
         else:
-            # xs = waerden.waerden(4, 5, 55)
-            # xs = waerden.waerden(4, 5, 54)
+            # xs = waerden.waerden(4, 5, 54)  # 55
             xs = waerden.waerden(3, 5, 21)  # 22
             # xs = waerden.waerden(4, 6, 72)  # 73
     else:
@@ -52,7 +47,8 @@ if __name__ == '__main__':
     def minimize(xs, s):
         t = list(sorted(s, key=abs))
         t_ = list(t)
-        for e_ in t:
+        cs = set()
+        for e_ in list(t):
             t = list(t_)
             t.remove(e_)
             while t:
@@ -60,11 +56,16 @@ if __name__ == '__main__':
                 if value is True:
                     return s_
                 if value is False:
-                    xs.add(sat.clause({-e for e in t}))
+                    c = sat.clause({-e for e in t})
+                    for x in list(cs):
+                        if all(e in x for e in c):
+                            cs.remove(x)
+                    cs.add(c)
                     e = random.choice(t)
                     t.remove(e)
                 else:
                     break
+        xs.update(cs)
         return None
 
     def rec(xs, s=None, mini=None):
@@ -76,13 +77,10 @@ if __name__ == '__main__':
         xs_orig = xs
         s_orig = s
         s_list = [(s, 0)]
-        s_list_other = []
-        while s_list or s_list_other:
+        while s_list:
             counter += 1
             if s_list:
                 s_orig, v = s_list.pop()
-            else:
-                s_orig, v = s_list_other.pop()
             xs = set(xs_orig)
             s = s_orig
             value, s, _, xs = sat.propagate(xs, s)
@@ -102,15 +100,25 @@ if __name__ == '__main__':
             if not all(xs):
                 continue
             vs = sat.get_literals(xs)
+            u = v
             v = None
             for e in vs:
                 if -e not in vs:
-                    if v is None or abs(e) < abs(v):
+                    if v is None or abs(e) < abs(v) and abs(e) > abs(u):
                         v = e
             if v is None:
                 for e in vs:
-                    if v is None or abs(e) < abs(v):
+                    if v is None or abs(e) < abs(v) and abs(e) > abs(u):
                         v = e
+            if v is None:
+                for e in vs:
+                    if -e not in vs:
+                        if v is None or abs(e) < abs(v):
+                            v = e
+                if v is None:
+                    for e in vs:
+                        if v is None or abs(e) < abs(v):
+                            v = e
             vs = [v] + ([] if -v not in vs else [-v])
             xs__ = set(xs)
             s__ = set(s)
@@ -149,7 +157,6 @@ if __name__ == '__main__':
                     if value is False:
                         c += 1
                         continue
-                    del xs
                     if (s, v) not in s_list:
                         s_list.append((s, v))
                 if c >= len(elems_d[elems]):
@@ -157,7 +164,6 @@ if __name__ == '__main__':
                         r = minimize(xs_orig, set(elems).union(s__))
                         if r is not None:
                             return r
-                        xs_orig = sat.clean(xs_orig)
             for v in vs:
                 s = s__.union({v})
                 for x in from_v_d[v]:
@@ -168,16 +174,17 @@ if __name__ == '__main__':
         return None
 
     vs = sat.get_variables(xs)
+    original_xs = set(xs)
     c = 0
+    selected = set()
     while True:
         counter = 0
-        # xs_ = sat.to3(xs)
-        xs_ = set(xs)
-        r = rec(set(xs_), mini=True)
+        xs_ = xs
+        r = rec(xs_, mini=True)
         if r is not None:
             r = {e for e in r if abs(e) in vs}
         # print(f"\x1b[2K\r{r}")
-        print(r is not None and all(any(e in r for e in x) for x in xs))
+        print(r is not None and all(any(e in r for e in x) for x in original_xs))
         print(counter)
         print(len(xs_), len(sat.get_variables(xs_)))
         if r is not None:
@@ -185,18 +192,16 @@ if __name__ == '__main__':
             xs.add(tuple(sorted({-e for e in r}, key=abs)))
             # limit = 3
             # t = set()
-            # while limit:
-            #     tries = 16
-            #     while tries:
-            #         e = random.choice(list(r))
-            #         t_ = t.union({-e})
-            #         if not any(all(f in t_ for f in x) for x in xs):
-            #             t = t_
-            #             break
-            #         tries -= 1
+            # r = r.difference(selected)
+            # while limit and r:
+            #     e = random.choice(list(r))
+            #     r.remove(e)
+            #     t.add(-e)
+            #     selected.add(e)
             #     limit -= 1
-            # xs.add(sat.clause(t))
-            # xs = sat.clean(xs)
+            # t = sat.clause(t)
+            # if t not in xs:
+            #     xs.add(t)
         else:
             break
     print("Total assignments:", c)
