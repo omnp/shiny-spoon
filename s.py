@@ -49,21 +49,52 @@ if __name__ == '__main__':
             return from_from(xs, from_v.union(from_from_v), limit)
         return from_v.union(from_from_v)
 
-    def rec(xs, s=None):
+    def minimize(xs, s):
+        t = list(sorted(s, key=abs))
+        t_ = list(t)
+        for e_ in t:
+            t = list(t_)
+            t.remove(e_)
+            while t:
+                value, s_, _, _ = sat.propagate(set(xs), set(t))
+                if value is True:
+                    return s_
+                if value is False:
+                    xs.add(sat.clause({-e for e in t}))
+                    e = random.choice(t)
+                    t.remove(e)
+                else:
+                    break
+        return None
+
+    def rec(xs, s=None, mini=None):
         global counter
         if s is None:
             s = set()
+        if mini is None:
+            mini = False
         xs_orig = xs
         s_orig = s
         s_list = [(s, 0)]
-        while s_list:
+        s_list_other = []
+        while s_list or s_list_other:
             counter += 1
-            s_orig, v = s_list.pop()
+            if s_list:
+                s_orig, v = s_list.pop()
+            else:
+                s_orig, v = s_list_other.pop()
             xs = set(xs_orig)
             s = s_orig
             value, s, _, xs = sat.propagate(xs, s)
             print(f"\x1b[2K\rStep {counter}\t | v: {v}", end="")
             if value is False:
+                if mini:
+                    r = minimize(xs_orig, s_orig)
+                    if r is not None:
+                        return r
+                for t_ in list(s_list):
+                    if all(e in t_[0] for e in s_orig):
+                        s_list.remove(t_)
                 continue
             if not xs:
                 assert not any(-e in s for e in s)
@@ -83,10 +114,13 @@ if __name__ == '__main__':
             vs = [v] + ([] if -v not in vs else [-v])
             xs__ = set(xs)
             s__ = set(s)
+            from_v_d = {}
+            elems_d = {}
             for v in vs:
                 from_v = []
                 to_v = []
                 xs = set(xs__)
+                s = set(s__)
                 for x in xs:
                     if -v in x:
                         if x != (-v,):
@@ -94,60 +128,75 @@ if __name__ == '__main__':
                     if v in x:
                         if x != (v,):
                             to_v.append(set(-e for e in x if e != v))
-                from_from_v = from_from(xs, set(from_v), 3)
-                if to_v:
-                    for elems in reversed(to_v):
-                        xs_ = set(xs__).union(from_v)
-                        s_ = set(s__).union({v})
-                        xs = xs_
-                        to_to_v = set()
-                        for e in elems:
-                            t = set()
-                            for x in xs:
-                                if e in x:
-                                    t = t.union((-f for f in x if f != e))
-                            if t:
-                                to_to_v.add(tuple(sorted(t, key=abs)))
-                        xs = xs_.union({(e,) for e in elems}).union(from_from_v).union(to_to_v)
-                        s = set(s_)
-                        for x in xs:
-                            if len(x) <= 1:
-                                s = s.union(set(x))
-                        s = s.union(elems)
-                        value, s, _, xs = sat.propagate(xs, s)
-                        if value is False:
-                            continue
-                        del xs_
-                        del xs
-                        if (s, v) not in s_list:
-                            s_list.append((s, v))
+                for elems in to_v:
+                    elems = tuple(sorted(elems, key=abs))
+                    if elems not in elems_d:
+                        elems_d[elems] = {}
+                    if v not in elems_d[elems]:
+                        elems_d[elems][v] = v
+                from_from_v = from_from(xs, set(from_v), 2)
+                if v not in from_v_d:
+                    from_v_d[v] = from_from_v
+            for elems in elems_d:
+                c = 0
+                for v in elems_d[elems]:
+                    xs = set(xs__).union(from_v_d[v])
+                    s = set(s__).union({v})
+                    for x in xs:
+                        if len(x) <= 1:
+                            s = s.union(set(x))
+                    value, s, _, xs = sat.propagate(xs, s)
+                    if value is False:
+                        c += 1
+                        continue
+                    del xs
+                    if (s, v) not in s_list:
+                        s_list.append((s, v))
+                if c >= len(elems_d[elems]):
+                    if mini:
+                        r = minimize(xs_orig, set(elems).union(s__))
+                        if r is not None:
+                            return r
+                        xs_orig = sat.clean(xs_orig)
+            for v in vs:
+                s = s__.union({v})
+                for x in from_v_d[v]:
+                    if len(x) <= 1:
+                        s = s.union(x)
+                if (s, v) not in s_list:
+                    s_list.append((s, v))
         return None
 
     vs = sat.get_variables(xs)
+    c = 0
     while True:
         counter = 0
-        xs_ = set(xs)  # sat.to3(xs)
-        r = rec(set(xs_))
+        # xs_ = sat.to3(xs)
+        xs_ = set(xs)
+        r = rec(set(xs_), mini=True)
         if r is not None:
             r = {e for e in r if abs(e) in vs}
-        print(f"\x1b[2K\r{r}")
+        # print(f"\x1b[2K\r{r}")
         print(r is not None and all(any(e in r for e in x) for x in xs))
         print(counter)
         print(len(xs_), len(sat.get_variables(xs_)))
         if r is not None:
-            # xs.add(tuple(sorted({-e for e in r}, key=abs)))
-            limit = 4
-            t = set()
-            while limit:
-                tries = 16
-                while tries:
-                    e = random.choice(list(r))
-                    t_ = t.union({-e})
-                    if not any(all(f in t_ for f in x) for x in xs):
-                        t = t_
-                        break
-                    tries -= 1
-                limit -= 1
-            xs.add(sat.clause(t))
+            c += 1
+            xs.add(tuple(sorted({-e for e in r}, key=abs)))
+            # limit = 3
+            # t = set()
+            # while limit:
+            #     tries = 16
+            #     while tries:
+            #         e = random.choice(list(r))
+            #         t_ = t.union({-e})
+            #         if not any(all(f in t_ for f in x) for x in xs):
+            #             t = t_
+            #             break
+            #         tries -= 1
+            #     limit -= 1
+            # xs.add(sat.clause(t))
+            # xs = sat.clean(xs)
         else:
             break
+    print("Total assignments:", c)
