@@ -40,6 +40,7 @@ def minimize(xs, s):
             cs.add(c)
             if len(xs) <= 0 or () in xs:
                 break
+            # break
     xs.update(cs)
     return None
 
@@ -92,9 +93,8 @@ def sat_check(xs, target=None, original_xs=None, memory=None, reasons=None, acce
             break
     else:
         for x in original_xs:
-            if all(e in target for e in x) or \
-                any(e in target for e in x) and \
-                    not any(-e in target for e in x):
+            if not all(e in target for e in x) and any(e in target for e in x) and \
+                not any(-e in target for e in x):
                 matching.add(x)
                 break
     if matching:
@@ -108,6 +108,7 @@ def sat_check(xs, target=None, original_xs=None, memory=None, reasons=None, acce
                 if sat_check(xs_, x__, original_xs=original_xs, memory=memory, reasons=reasons, accessed=accessed):
                     x_ = clause(set(x_).difference({e}))
                 else:
+                    return False
                     break
             else:
                 continue
@@ -225,7 +226,7 @@ for x in xs:
 print(*(sat_check(xs, target=(-e,), memory=memory) for e in x), counter)
 
 
-import matplotlib.pyplot as plot
+# import matplotlib.pyplot as plot
 
 # x = []
 # c = []
@@ -259,31 +260,31 @@ import matplotlib.pyplot as plot
 # plot.plot(c, y)
 # plot.show()
 
-x = []
-y = []
+# x = []
+# y = []
 
-random.seed(1)
-m = n = 4
-xs = php.php(m, n)
-index = 1
-while True:
-    counter = 0
-    r = sat_wrap(set(xs))
-    print(r, counter)
-    if r is not None:
-        x.append(len(xs))
-        y.append(counter)
-        index += 1
-        xs.add(clause(-e for e in r))
-    else:
-        break
+# random.seed(1)
+# m = n = 4
+# xs = php.php(m, n)
+# index = 1
+# while True:
+#     counter = 0
+#     r = sat_wrap(set(xs))
+#     print(r, counter)
+#     if r is not None:
+#         x.append(len(xs))
+#         y.append(counter)
+#         index += 1
+#         xs.add(clause(-e for e in r))
+#     else:
+#         break
 
-print(x)
-# y.reverse()
-print(y)
-plot.figure()
-plot.plot(x, y)
-plot.show()
+# print(x)
+# # y.reverse()
+# print(y)
+# plot.figure()
+# plot.plot(x, y)
+# plot.show()
 
 
 # x = []
@@ -311,3 +312,83 @@ plot.show()
 # plot.figure()
 # plot.plot(x, y)
 # plot.show()
+
+
+def iterate(xs):
+    global counter
+    vs = get_variables(xs)
+    vs = list(sorted(vs))
+    xs_by_elems = {}
+    for x in xs:
+        for e in x:
+            if e not in xs_by_elems:
+                xs_by_elems[e] = set()
+            xs_by_elems[e].add(x)
+    try:
+        while all(set.union(*xs_by_elems.values())):
+            print("\r\t", len(set.union(*xs_by_elems.values())), " \t", counter, end="")
+            s = set()
+            vs_ = list(sorted(get_variables(xs)))
+            for v in vs_:
+                counter += 1
+                s.add(v)
+                if any(-e in xs_by_elems and any(all(-f in s for f in x) for x in xs_by_elems[-e]) for e in s):
+                    s.remove(v)
+                    s.add(-v)
+                    if any(-e in xs_by_elems and any(all(-f in s for f in x) for x in xs_by_elems[-e]) for e in s):
+                        s.remove(-v)
+                        r = {-e for e in s}
+                        for f in r:
+                            if f not in xs_by_elems:
+                                xs_by_elems[f] = set()
+                            xs_by_elems[f].add(clause(r))
+                            clean(xs_by_elems[f])
+                        if not r:
+                            raise ValueError(())
+                        for e in list(r):
+                            s_ = clause(set(r).difference({e}).union({-e}))
+                            if s_ in xs or any(f in xs_by_elems and any(all(g in s_ for g in x) for x in xs_by_elems[f]) for f in s_):
+                                r.remove(e)
+                                t = clause(r)
+                                for f in t:
+                                    if f not in xs_by_elems:
+                                        xs_by_elems[f] = set()
+                                    xs_by_elems[f].add(t)
+                                    clean(xs_by_elems[f])
+                                if not t:
+                                    raise ValueError(())
+                        break
+            if all(any(e in s for e in x) for x in xs):
+                xs.update(set.union(*xs_by_elems.values()))
+                return s
+    except ValueError:
+        xs.update(set.union(*xs_by_elems.values()))
+        return None
+
+
+random.seed(1)
+xs = php.php(4, 4)
+# with open("examples/factoring2017-0006.dimacs") as file:
+# with open("examples/factoring2017-0001.dimacs") as file:
+# with open("examples/factoring2017.dimacs") as file:
+#     text = file.read()
+#     file.close()
+#     _, xs = dimacs.parse_dimacs(text)
+#     xs = {clause(set(x)) for x in xs}
+m = max(len(x) for x in xs)
+while True:
+    counter = 0
+    vs = get_variables(xs)
+    r = iterate((xs))
+    print(r, counter)
+    if r is None:
+        break
+    # xs.add(clause(-e for e in r if abs(e) in vs))
+    t = set()
+    for e in {e for e in r if abs(e) in vs}:
+        t.add(-e)
+        if any(all(-f in t for f in x) for x in xs):
+            t.remove(-e)
+        if len(t) >= m:
+            break
+    xs.add(clause(t))
