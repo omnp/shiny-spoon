@@ -85,7 +85,7 @@ def propagate(xs, assignment):
     while True:
         if any(-e in assignment.union(unit) for e in assignment.union(unit)):
             value = False
-            # break
+            break
         xs = exclude(xs, assignment.union(unit))
         if not xs:
             if value is None:
@@ -93,7 +93,7 @@ def propagate(xs, assignment):
             break
         if not all(xs):
             value = False
-            # break
+            break
         ls = get_literals(xs)
         unit_ = {e for e in ls if -e not in ls}
         for x in xs:
@@ -548,3 +548,4 @@ def sat(xs, **kwargs):
     if r[0]:
         return True, r[1][0]
     return False, None
+
