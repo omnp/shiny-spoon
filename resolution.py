@@ -1,7 +1,9 @@
 from sat import clause, get_variables, to3, randomize, propagate, exclude
 from sat import generate_full_alt, generate_assignment, random_instance
+from sat import get_literals
 import php
 import dimacs
+import waerden
 import random
 import math
 
@@ -16,7 +18,7 @@ def clean(xs):
         tree_ = tree
         for e in x:
             if e in tree_:
-                if isinstance(tree_[e], tuple):
+                if isinstance(tree_[e], tuple) or isinstance(tree_[e], frozenset):
                     break
                 tree_ = tree_[e]
         else:
@@ -34,164 +36,43 @@ def clean(xs):
     return xs
 
 
-def rename(xs, u, v):
-    xs_ = set()
-    for x in xs:
-        x_ = []
-        for e in x:
-            if abs(e) == abs(u):
-                x_.append(((e > 0) - (e < 0)) * v)
-            else:
-                x_.append(e)
-        x = tuple(sorted(x_, key=abs))
-        xs_.add(x)
-    return xs_
-
-
-def minimize(xs, s):
-    t = list(sorted(s, key=abs))
-    cs = set()
-    for e in t:
-        t_ = list(t)
-        t_.remove(e)
-        c = None
-        for e_ in list(t_):
-            t__ = list(t_)
-            t__.remove(e_)
-            value, s_, _, _ = propagate(set(xs), set(t__))
-            if value is True:
-                return s_
-            if value is False:
-                c = clause({-e for e in t__})
-            else:
-                break
-            t_ = t__
-        if c is not None:
-            cs.add(c)
-            if len(xs) <= 0 or () in xs:
-                break
-            break
-    xs.update(cs)
-    return None
-
-
-def preprocess(xs, reverse=None, from_one=None):
-    if reverse is None:
-        reverse = True
-    if from_one is None:
-        from_one = False
-    vs_dict = {}
-    vs = get_variables(xs)
-    for v in vs:
-        vs_dict[v] = sum(1 if v in x else 0 for x in xs)
-    if from_one is True:
-        vsr = list(range(1, len(vs)+1))
-    else:
-        vsr = list(sorted(vs))
-#     us = list(sorted(vs, key=lambda v: vs_dict[v], reverse=reverse))
-    us = list(sorted(vs))
-    map = {u: v for u, v in zip(us, vsr)}
-    for u, v in list(map.items()):
-        map[-u] = -v
-    for u in {abs(u) for u in map}:
-        v = map[u]
-        if sum(1 if v in x else 0 for x in xs) < sum(1 if -v in x else 0 for x in xs):
-            map[u] = -v
-            map[-u] = v
-    xs_ = set()
-    for x in xs:
-        x = tuple(map[e] for e in x)
-        x = tuple(sorted(x, key=abs))
-        xs_.add(x)
-    xs.clear()
-    xs.update(xs_)
-    return xs, map
-
-
-def rec(original_xs, w=None, memory=None):
+def rec(original_xs):
     global counter
-    counter += 1
-    if memory is None:
-        memory = set()
-    if w is None:
-        w = set()
-    xs = set(original_xs)
-    value, r, _, xs = propagate(xs, w)
-    print(f"\x1b[2K\r\t{counter}\t{len(xs)}", end="")
-    key, map_ = preprocess(set(xs), reverse=True, from_one=True)
-    key = frozenset(key)
-    if key in memory or any(all(x in key for x in k) for k in memory):
-        value = False
-    if value is False:
-#         original_xs.add(clause(-e for e in w))
-#         minimize(original_xs, clause(-e for e in w))
-#         clean(original_xs)
-        if not any(all(x in key for x in k) for k in memory):
-            for k in list(memory):
-                if all(x in k for x in key):
-                    memory.remove(k)
-            memory.add(key)
-            clean(memory)
-        return None
-    if value is True:
-        return r
-    vs = get_variables(xs)
-    v = min(vs)
-#     for v in (v, -v):
-    vs_ = set()
-    for v in sorted(vs):
-        value, s, _, xs_ = propagate(xs, r.union({v}))
-        if value is False:
-            r.add(-v)
-            continue
+    targets = [()]
+    while targets:
+        targets.sort(reverse=True)
+        target = targets.pop()
+        counter += 1
+        print(f"\x1b[2K\r\t{counter}\t{len(targets)}\t{len(target)}", end="")
+        value, r, vs, _ = propagate(original_xs, set(-e for e in target))
         if value is True:
-            return s
-        if value is None:
-            vs_.add(v)
-    if not vs_:
-        if not any(all(x in key for x in k) for k in memory):
-            for k in list(memory):
-                if all(x in k for x in key):
-                    memory.remove(k)
-            memory.add(key)
-            clean(memory)
-        return None
-    v = min(vs_)
-    for v in (v, -v):
-#     for v in sorted(vs_):
-        value, s, _, xs_ = propagate(xs, r.union({v}))
+            return r
+        if value is not False:
+            if any(all(e in {-f for f in r} for e in x) for x in original_xs):
+                value = False
         if value is False:
-            r.add(-v)
+            for element in reversed(target):
+                target_ = set(target).difference({element}).union({-element})
+                value, r, _, _ = propagate(original_xs, set(-e for e in target_))
+                if value is True:
+                    return r
+                if value is False:
+                    target = tuple(e for e in target if e != element)
+            if not target:
+                return None
+            original_xs.add(clause(target))
+            clean(original_xs)
+            for t in list(targets):
+                if all(e in t for e in target):
+                    targets.remove(t)
             continue
-        else:
-            t = s
-        if value is None:
-            t = rec(original_xs, t, memory=memory)
-        if t is not None:
-            value, s, _, _ = propagate(original_xs, t)
-            if value is False:
-                continue
-            if value is True:
-                t = s
-            if value is None:
-                t = rec(original_xs, s, memory=memory)
-            if t is not None:
-                for e in get_variables(original_xs):
-                    if -e not in t:
-                        t.add(e)
-                assert not any(-e in t for e in t)
-                assert len(t) >= len(get_variables(original_xs))
-                assert all(any(e in t for e in x) for x in original_xs)
-                return t
-#     original_xs.add(clause(-e for e in w))
-#     minimize(original_xs, clause(-e for e in w))
-#     clean(original_xs)
-    if not any(all(x in key for x in k) for k in memory):
-        for k in list(memory):
-            if all(x in k for x in key):
-                memory.remove(k)
-        memory.add(key)
-        clean(memory)
+        v = max(vs, key=lambda v: max(len({v, -v}.union(target).intersection(x)) for x in original_xs))
+        target_ = target + (-v,)
+        if target_ not in targets:
+            targets.append(target_)    
+        target_ = target + (v,)
+        if target_ not in targets:
+            targets.append(target_)    
 
 
 def main():
@@ -204,7 +85,7 @@ def main():
     # xs = php.php(3, 3)
     # xs = php.php(4, 4)
     # xs = php.php(5, 5)
-    xs = php.php(6, 6)
+    # xs = php.php(6, 6)
     # xs = php.php(7, 7)
     # xs = php.php(8, 8)
     # xs = php.php(9, 9)
@@ -218,7 +99,7 @@ def main():
     # xs = php.php(4, 3)
     # xs = php.php(5, 4)
     # xs = php.php(6, 5)
-    # xs = php.php(7, 6)
+    xs = php.php(7, 6)
     # xs = php.php(8, 7)
     # xs = php.php(9, 8)
     # xs = php.php(10, 9)
@@ -235,6 +116,8 @@ def main():
     #     if all(e < 0 for e in x):
     #         xs.remove(x)
     #         break
+    # xs = to3(xs)
+    # xs = waerden.waerden(3, 5, 22)
     print(len(xs), len(get_variables(xs)))
     xs = randomize(xs)
     counter = 0
@@ -252,7 +135,6 @@ def main():
     #     ts.add(clause(t))
     #     xs = {x for x in xs if not all(-e in t for e in x)}
     # print("ts", len(ts))
-    # print(len(xs), len(get_variables(xs)))
     # _, xs = random_instance(128, 10000, 7)
     # with open("examples/factoring2017-0002.dimacs") as file:
     # with open("examples/factoring2017-0003.dimacs") as file:
@@ -265,23 +147,25 @@ def main():
         file.close()
         _, xs = dimacs.parse_dimacs(text)
         xs = {clause(set(x)) for x in xs}
+    # _, xs = random_instance(128, 10000, 7)
+    # xs = waerden.waerden(4, 5, 55)
+    # xs = waerden.waerden(4, 5, 54)
+    # xs = waerden.waerden(3, 5, 21)
+    # xs = waerden.waerden(3, 5, 22)
+    print(len(xs), len(get_variables(xs)))
     xs = set(xs)
     # xs = randomize(xs)
     counter = 0
-    # r = rec(xs)
-    # print(r, counter)
     total = 0
     vs = get_variables(xs)
-    # xs = to3(xs)
-    memory = set()
     xs_ = set(xs)
     rs_ = set()
     while True:
-        counter = 0
-        r = rec(xs, memory=memory)
+        counter_ = counter
+        r = rec(xs)
         if r is not None:
             total += 1
-        print("\n\t", r is not None, counter, total)
+        print("\n\t", r is not None, counter - counter_, total)
         if r is None:
             break
         xs.add(clause(-e for e in r if abs(e) in vs))
@@ -290,10 +174,9 @@ def main():
     counter = 0
     if rs_:
         rs_.pop()
-    r = rec(xs_.union(rs_), memory=set())
+    r = rec(xs_.union(rs_))
     print("\n\t", r is not None, counter, total)
 
 
 if __name__ == '__main__':
     main()
-
