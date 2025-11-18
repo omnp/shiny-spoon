@@ -1,5 +1,5 @@
 # shiny-spoon
-3-CNF-SAT (toy) solver
+CNF-SAT (toy) solver
 
 Procedure for checking satisfiability.
 
