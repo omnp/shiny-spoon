@@ -85,6 +85,7 @@ def main():
     counter = 0
     r = rec(xs)
     print(r, counter)
+    random.seed(1)
     ratio = 4.27
     n = 314
     m = int(math.ceil(n * ratio))
@@ -94,26 +95,30 @@ def main():
 
     from sat import randomize_order
 
-    def random_instance_given_assignments(n, m, k, assignments=None):
+    def random_instance_given_assignments(n, m=None, k=None, assignments=None):
         """
         Generates a random instance targeted to have n variables, m clauses,
         with clause length equal to k.
         """
         if assignments is None:
             assignments = set()
+        if k is None:
+            k = 3
+        if m is None:
+            m = math.inf
         xs = set()
         counter = 0
         limit = 512
         variables = tuple(range(1, 1 + n))
         while len(xs) < m:
-            xs_ = set(xs)
+            n_ = len(xs)
             x = clause(
                     random.choice((1, -1)) * v
                     for v in randomize_order(variables)[:k]
                 )
             if not any(all(-e in s for e in x) for s in assignments):
                 xs.add(x)
-            if xs_ == xs:
+            if n_ == len(xs):
                 counter += 1
             else:
                 counter = 0
@@ -123,6 +128,7 @@ def main():
 
     s = clause(generate_assignment(n))
     _, xs = random_instance_given_assignments(n, m, k, {s})
+    # _, xs = random_instance_given_assignments(n, None, k, {s})
     print(len(xs), len(get_variables(xs)))
     xs = set(xs)
     counter = 0
