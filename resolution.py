@@ -56,29 +56,24 @@ def rec(original_xs, additional_xs=None):
                 if value is True:
                     return r
                 if value is False:
-                    if target in additional_xs:
-                        additional_xs.remove(target)
-                    if target_ in additional_xs:
-                        additional_xs.remove(target_)
-                    for x in list(additional_xs):
-                        if all(e in x for e in target):
-                            additional_xs.remove(x)
-                        elif all(e in x for e in target_):
-                            additional_xs.remove(x)
                     target = tuple(e for j, e in enumerate(target) if j != i)
-                    additional_xs.add(clause(target))
                 i -= 1
             for t in list(targets):
                 if all(e in t for e in target):
                     targets.remove(t)
+            additional_xs.add(clause(target))
+            for t in list(additional_xs):
+                if t != clause(target) and all(e in t for e in target):
+                    additional_xs.remove(t)
             continue
-        vs = {abs(e) for e in vs}
-        for v in vs:
+        vs = max(xs, key=len)
+        for v in sorted(vs, key=abs, reverse=True):
             target_ = target + (-v,)
             if target_ not in targets:
                 if not any(all(e in target_ for e in t) for t in targets):
-                    targets.append(target_)
-                    target = target + (v,)
+                    if not any(all(e in target_ for e in x) for x in original_xs.union(additional_xs)):
+                        targets.append(target_)
+            target = target + (v,)
 
 
 def main():
@@ -91,7 +86,7 @@ def main():
     r = rec(xs)
     print(r, counter)
     ratio = 4.27
-    n = 128
+    n = 314
     m = int(math.ceil(n * ratio))
     k = 3
     print(f"Clauses to variables ratio: {ratio}, with {n} variables and {m} clauses....")
