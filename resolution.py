@@ -1,9 +1,6 @@
-from sat import clause, get_variables, to3, randomize, propagate, exclude
-from sat import generate_full_alt, generate_assignment, random_instance
-from sat import get_literals
+from sat import clause, get_variables, randomize, propagate
+from sat import generate_assignment
 import php
-import dimacs
-import waerden
 import random
 import math
 
@@ -77,105 +74,22 @@ def rec(original_xs, additional_xs=None):
             continue
         vs = {abs(e) for e in vs}
         for v in vs:
-            target_ = target + (v,)
+            target_ = target + (-v,)
             if target_ not in targets:
                 if not any(all(e in target_ for e in t) for t in targets):
                     targets.append(target_)
-                    target = target + (-v,)
+                    target = target + (v,)
 
 
 def main():
     global counter
     random.seed(1)
-    # xs = php.php(1, 2)
-    # xs = php.php(2, 2)
-    # xs = php.php(1, 3)
-    # xs = php.php(2, 3)
-    # xs = php.php(3, 3)
-    # xs = php.php(4, 4)
-    # xs = php.php(5, 5)
-    # xs = php.php(6, 6)
-    # xs = php.php(7, 7)
-    # xs = php.php(8, 8)
-    # xs = php.php(9, 9)
-    # xs = php.php(16, 16)
-    # xs = php.php(24, 24)
-    # xs = php.php(48, 48)
-    # xs = php.php(72, 72)
-    # xs = php.php(92, 92)
-    # xs = php.php(99, 99)
-    # xs = php.php(3, 2)
-    # xs = php.php(4, 3)
-    # xs = php.php(5, 4)
-    # xs = php.php(6, 5)
     xs = php.php(7, 6)
-    # xs = php.php(8, 7)
-    # xs = php.php(9, 8)
-    # xs = php.php(10, 9)
-    # xs = php.php(11, 10)
-    # xs = php.php(12, 11)
-    # xs = php.php(15, 14)
-    # xs = php.php(19, 18)
-    # xs = php.php(21, 20)
-    # xs = php.php(25, 24)
-    # xs = php.php(31, 30)
-    # xs = php.php(42, 41)
-    # xs.pop()
-    # for x in xs:
-    #     if all(e < 0 for e in x):
-    #         xs.remove(x)
-    #         break
-    # xs = to3(xs)
     print(len(xs), len(get_variables(xs)))
     xs = randomize(xs)
     counter = 0
     r = rec(xs)
     print(r, counter)
-    ## exit()
-    # u = 12
-    # v = 12
-    # n = u*v
-    # xsp = php.php(u, v)
-    # xsp = to3(xsp)
-    # xsp = randomize(xsp)
-    # n = len(get_variables(xsp))
-    # s = generate_assignment(n)
-    counter = 0
-    # s = rec(set(xsp))
-    # counter = 0
-    # xs = generate_full_alt(s, j=4, k=4, full=True)
-    # xs = generate_full_alt(s, j=3, k=7, full=True)
-    # xs = generate_full_alt(s, j=2, k=2, full=True)
-    # xsp = php.php(u, v)
-    # xsp = randomize(xsp)
-    # xs = xs.union(xsp)
-    # ts = set()
-    # ts = {clause(s)}
-
-    # for _ in range(1):
-        # t = generate_assignment(n)
-        # t = generate_assignment_php(n)
-        # while clause(t) in ts:
-        # while clause(t) in ts:
-            # t = generate_assignment(n)
-        # ts.add(clause(t))
-        # xs = {x for x in xs if not all(-e in t for e in x)}
-    # for t in ts:
-    #     xs = {x for x in xs if not all(-e in t for e in x)}
-    # xs = xs.union(xsp)
-    # print("ts", len(ts))
-    # _, xs = random_instance(128, 10000, 7)
-    # with open("examples/factoring2017-0002.dimacs") as file:
-    # with open("examples/factoring2017-0003.dimacs") as file:
-    # with open("examples/factoring2017-0004.dimacs") as file:
-    # with open("examples/factoring2017-0005.dimacs") as file:
-    # with open("examples/factoring2017-0006.dimacs") as file:
-    # with open("examples/factoring2017-0001.dimacs") as file:
-    # with open("examples/factoring2017.dimacs") as file:
-    #     text = file.read()
-    #     file.close()
-    #     _, xs = dimacs.parse_dimacs(text)
-    #     xs = {clause(set(x)) for x in xs}
     ratio = 4.27
     n = 128
     m = int(math.ceil(n * ratio))
@@ -214,20 +128,11 @@ def main():
 
     s = clause(generate_assignment(n))
     _, xs = random_instance_given_assignments(n, m, k, {s})
-    # _, xs = random_instance(n, m, k)
-    # _, xs = random_instance(128, 10000, 7)
-    # xs = waerden.waerden(4, 5, 55)
-    # xs = waerden.waerden(4, 5, 54)
-    # xs = waerden.waerden(3, 5, 21)
-    # xs = waerden.waerden(3, 5, 22)
     print(len(xs), len(get_variables(xs)))
     xs = set(xs)
-    # xs = randomize(xs)
     counter = 0
     total = 0
     vs = get_variables(xs)
-    # xs = to3(xs)
-    print(len(xs), len(get_variables(xs)))
     xs_ = set(xs)
     rs_ = set()
     additional_xs = set()
@@ -241,7 +146,6 @@ def main():
             break
         xs.add(clause(-e for e in r if abs(e) in vs))
         rs_.add(clause(-e for e in r if abs(e) in vs))
-        # xs = to3(xs)
         clean(xs)
         clean(additional_xs)
     counter = 0
