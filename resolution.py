@@ -1,6 +1,6 @@
 from sat import clause, get_variables, randomize, propagate
 from sat import generate_assignment
-import php
+from functools import wraps
 import random
 import math
 
@@ -33,6 +33,28 @@ def clean(xs):
     return xs
 
 
+def update_additional_clauses(fn):
+    @wraps(fn)
+    def wrap(*args, **kwargs):
+        old_additional_clauses = None
+        additional_clauses = None
+        if len(args) >= 2:
+            if isinstance(args[1], set):
+                old_additional_clauses = set(args[1])
+                additional_clauses = args[1]
+        elif 'additional_xs' in kwargs:
+            if isinstance(kwargs['additional_xs'], set):
+                old_additional_clauses = set(kwargs['additional_xs'])
+                additional_clauses = kwargs['additional_xs']
+        result = fn(*args, **kwargs)
+        if old_additional_clauses is not None:
+            additional_clauses.difference_update(old_additional_clauses)
+        return result
+
+    return wrap
+
+
+@update_additional_clauses
 def rec(original_xs, additional_xs=None):
     global counter
     if additional_xs is None:
