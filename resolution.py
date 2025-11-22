@@ -45,48 +45,43 @@ def rec(original_xs, additional_xs=None):
         target = targets.pop()
         counter += 1
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(targets)}\t{len(target)}", end="")
-        value, r, vs, _ = propagate(original_xs.union(additional_xs), set(-e for e in target))
+        value, r, _, _ = propagate(original_xs.union(additional_xs), {e for e in target})
         if value is True:
             return r
-        if value is not False:
-            if any(all(e in {-f for f in r} for e in x) for x in original_xs.union(additional_xs)):
-                value = False
+        value, r, vs, xs = propagate(original_xs.union(additional_xs), {-e for e in target})
+        if value is True:
+            return r
         if value is False:
-            target_r = list(target)
-            random.shuffle(target_r)
-            for element in target_r:
-                target_ = set(target).difference({element}).union({-element})
-                value, r, _, _ = propagate(original_xs.union(additional_xs), set(-e for e in target_))
+            i = len(target)-1
+            while i > 0:
+                target_ = target[:i] + (-target[i],) + target[i+1:]
+                value, r, _, _ = propagate(original_xs.union(additional_xs), {-e for e in target_})
                 if value is True:
                     return r
                 if value is False:
-                    target = tuple(e for e in target if e != element)
-            if not target:
-                return None
-            additional_xs.add(clause(target))
-            clean(additional_xs)
+                    if target in additional_xs:
+                        additional_xs.remove(target)
+                    if target_ in additional_xs:
+                        additional_xs.remove(target_)
+                    for x in list(additional_xs):
+                        if all(e in x for e in target):
+                            additional_xs.remove(x)
+                        elif all(e in x for e in target_):
+                            additional_xs.remove(x)
+                    target = tuple(e for j, e in enumerate(target) if j != i)
+                    additional_xs.add(clause(target))
+                i -= 1
             for t in list(targets):
                 if all(e in t for e in target):
                     targets.remove(t)
-            if target:
-                i = len(target) - 1
-                while i >= 0:
-                    if target[i] < 0:
-                        break
-                    i -= 1
-                if i >= 0 and target[i] < 0:
-                    target_ = target[0:i] + (-target[i],) + target[i+1:]
-                    assert target_ not in targets
-                    targets.append(target_)
             continue
-        v = max(vs, key=lambda v: max(len({v, -v}.union(target).intersection(x)) for x in (additional_xs or original_xs)))
-        v = -abs(v)
-        target_ = target + (v,)
-        if target_ not in targets:
-            assert not any(all(e in target_ for e in x) for x in original_xs)
-            assert not any(all(e in target_ for e in x) for x in additional_xs)
-            assert not any(all(e in target_ for e in x) for x in targets)
-            targets.append(target_)
+        vs = {abs(e) for e in vs}
+        for v in vs:
+            target_ = target + (v,)
+            if target_ not in targets:
+                if not any(all(e in target_ for e in t) for t in targets):
+                    targets.append(target_)
+                    target = target + (-v,)
 
 
 def main():
@@ -131,7 +126,6 @@ def main():
     #         xs.remove(x)
     #         break
     # xs = to3(xs)
-    # xs = waerden.waerden(3, 5, 22)
     print(len(xs), len(get_variables(xs)))
     xs = randomize(xs)
     counter = 0
@@ -183,8 +177,8 @@ def main():
     #     _, xs = dimacs.parse_dimacs(text)
     #     xs = {clause(set(x)) for x in xs}
     ratio = 4.27
-    n = 128 # 1722 # 192 # 256 # 314 # 134 # 314
-    m = int(n * ratio)
+    n = 128
+    m = int(math.ceil(n * ratio))
     k = 3
     print(f"Clauses to variables ratio: {ratio}, with {n} variables and {m} clauses....")
     print(f"(Clause length: {k})")
