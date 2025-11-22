@@ -77,17 +77,11 @@ def rec(original_xs, additional_xs=None):
 
 
 def main():
+    import sys  # For command line arguments
     global counter
     random.seed(1)
-    xs = php.php(7, 6)
-    print(len(xs), len(get_variables(xs)))
-    xs = randomize(xs)
-    counter = 0
-    r = rec(xs)
-    print(r, counter)
-    random.seed(1)
     ratio = 4.27
-    n = 314
+    n = 100
     m = int(math.ceil(n * ratio))
     k = 3
     print(f"Clauses to variables ratio: {ratio}, with {n} variables and {m} clauses....")
@@ -135,25 +129,42 @@ def main():
     total = 0
     vs = get_variables(xs)
     xs_ = set(xs)
-    rs_ = set()
+    rs_ = []
     additional_xs = set()
+    stats = []
+    split = False
+    if len(sys.argv) > 1 and sys.argv[1] == "split":
+        split = True
     while True:
         counter_ = counter
         r = rec(xs, additional_xs)
         if r is not None:
             total += 1
         print("\n\t", r is not None, counter - counter_, total)
+        stats.append((len(xs), counter - counter_))
         if r is None:
             break
-        xs.add(clause(-e for e in r if abs(e) in vs))
-        rs_.add(clause(-e for e in r if abs(e) in vs))
+        r = clause(-e for e in r if abs(e) in vs)
+        if split:
+            r = list(r)
+            random.shuffle(r)
+            r = clause(r[:k])
+        xs.add(r)
+        if r not in rs_:
+            rs_.append(r)
         clean(xs)
         clean(additional_xs)
-    counter = 0
-    if rs_:
+    reverse_stats = []
+    while rs_:
+        counter = 0
         rs_.pop()
-    r = rec(xs_.union(rs_))
-    print("\n\t", r is not None, counter, total)
+        size = len(xs_.union(rs_))
+        r = rec(xs_.union(rs_))
+        print("\n\t", r is not None, counter, size)
+        reverse_stats.append((size, counter))
+    max_forward = max(stats, key=lambda t: t[1])
+    max_reverse = max(reverse_stats, key=lambda t: t[1])
+    print(f"Maximums: {max_forward} (forward), {max_reverse} (reverse)")
 
 
 if __name__ == '__main__':
