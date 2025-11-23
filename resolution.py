@@ -90,7 +90,6 @@ def rec(original_xs, additional_xs=None, n_variables_factor=None):
                 if t != clause(target) and all(e in t for e in target):
                     additional_xs.remove(t)
             continue
-        vs = {abs(v) for v in vs if abs(v) > abs(max((0,) + target, key=abs))}
         variables = list(sorted(abs(v) for v in vs))
         length = len(variables)
         last_index_past = int(math.ceil(n_variables_factor * length))
