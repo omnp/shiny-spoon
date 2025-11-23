@@ -88,13 +88,12 @@ def rec(original_xs, additional_xs=None):
                 if t != clause(target) and all(e in t for e in target):
                     additional_xs.remove(t)
             continue
-        vs = max(xs, key=len)
+        vs = min(xs, key=len)
         for v in sorted(vs, key=abs, reverse=True):
             target_ = target + (-v,)
             if target_ not in targets:
                 if not any(all(e in target_ for e in t) for t in targets):
-                    if not any(all(e in target_ for e in x) for x in original_xs.union(additional_xs)):
-                        targets.append(target_)
+                    targets.append(target_)
             target = target + (v,)
 
 
@@ -145,6 +144,8 @@ def main():
     s = clause(generate_assignment(n))
     _, xs = random_instance_given_assignments(n, m, k, {s})
     # _, xs = random_instance_given_assignments(n, None, k, {s})
+    # _, xs = random_instance_given_assignments(n, m, k)
+    # _, xs = random_instance_given_assignments(n, None, k)
     print(len(xs), len(get_variables(xs)))
     xs = set(xs)
     counter = 0
@@ -185,7 +186,7 @@ def main():
         print("\n\t", r is not None, counter, size)
         reverse_stats.append((size, counter))
     max_forward = max(stats, key=lambda t: t[1])
-    max_reverse = max(reverse_stats, key=lambda t: t[1])
+    max_reverse = max([(None, 0)] + reverse_stats, key=lambda t: t[1])
     print(f"Maximums: {max_forward} (forward), {max_reverse} (reverse)")
 
 
