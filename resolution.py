@@ -95,14 +95,12 @@ def rec(original_xs, additional_xs=None, n_variables_factor=None):
         length = len(variables)
         last_index_past = int(math.ceil(n_variables_factor * length))
         variables = variables[:last_index_past]
-        vs = {v for v in vs if abs(v) in variables}
-        for v in sorted(vs, key=abs, reverse=False):
-            v = -v
-            target_ = target + (-v,)
+        for v in variables:
+            target_ = target + (v,)
             if target_ not in targets:
                 if not any(all(e in target_ for e in t) for t in targets):
                     targets.append(target_)
-                    target = target + (v,)
+                    target = target + (-v,)
 
 
 def main():
