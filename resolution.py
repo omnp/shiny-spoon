@@ -55,8 +55,10 @@ def update_additional_clauses(fn):
 
 
 @update_additional_clauses
-def rec(original_xs, additional_xs=None):
+def rec(original_xs, additional_xs=None, n_variables_factor=None):
     global counter
+    if n_variables_factor is None:
+        n_variables_factor = 1.0
     if additional_xs is None:
         additional_xs = set()
     targets = [()]
@@ -88,13 +90,19 @@ def rec(original_xs, additional_xs=None):
                 if t != clause(target) and all(e in t for e in target):
                     additional_xs.remove(t)
             continue
-        vs = min(xs, key=len)
-        for v in sorted(vs, key=abs, reverse=True):
+        vs = {abs(v) for v in vs if abs(v) > abs(max((0,) + target, key=abs))}
+        variables = list(sorted(abs(v) for v in vs))
+        length = len(variables)
+        last_index_past = int(math.ceil(n_variables_factor * length))
+        variables = variables[:last_index_past]
+        vs = {v for v in vs if abs(v) in variables}
+        for v in sorted(vs, key=abs, reverse=False):
+            v = -v
             target_ = target + (-v,)
             if target_ not in targets:
                 if not any(all(e in target_ for e in t) for t in targets):
                     targets.append(target_)
-            target = target + (v,)
+                    target = target + (v,)
 
 
 def main():
@@ -146,6 +154,7 @@ def main():
     # _, xs = random_instance_given_assignments(n, None, k, {s})
     # _, xs = random_instance_given_assignments(n, m, k)
     # _, xs = random_instance_given_assignments(n, None, k)
+    #
     print(len(xs), len(get_variables(xs)))
     xs = set(xs)
     counter = 0
@@ -156,11 +165,17 @@ def main():
     additional_xs = set()
     stats = []
     split = False
-    if len(sys.argv) > 1 and sys.argv[1] == "split":
+    args = list(sys.argv[1:])
+    if args and "split" in args:
+        args.remove("split")
         split = True
+    n_variables_factor = 0.5
+    if args:
+        n_variables_factor = float(args[0])
+
     while True:
         counter_ = counter
-        r = rec(xs, additional_xs)
+        r = rec(xs, additional_xs, n_variables_factor=n_variables_factor)
         if r is not None:
             total += 1
         print("\n\t", r is not None, counter - counter_, total)
@@ -182,7 +197,7 @@ def main():
         counter = 0
         rs_.pop()
         size = len(xs_.union(rs_))
-        r = rec(xs_.union(rs_))
+        r = rec(xs_.union(rs_), n_variables_factor=n_variables_factor)
         print("\n\t", r is not None, counter, size)
         reverse_stats.append((size, counter))
     max_forward = max(stats, key=lambda t: t[1])
