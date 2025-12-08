@@ -55,51 +55,38 @@ def update_additional_clauses(fn):
 
 
 @update_additional_clauses
-def rec(original_xs, additional_xs=None, n_variables_factor=None):
+def rec(original_xs, additional_xs=None):
     global counter
-    if n_variables_factor is None:
-        n_variables_factor = 1.0
     if additional_xs is None:
         additional_xs = set()
-    targets = [()]
-    while targets:
-        target = targets.pop()
+    targets = additional_xs
+    target = ()
+    xs = set(original_xs)
+    while True:
         counter += 1
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(targets)}\t{len(target)}", end="")
-        value, r, _, _ = propagate(original_xs.union(additional_xs), {e for e in target})
+        value, r, vs, xs = propagate(xs.union(targets), {-e for e in target})
         if value is True:
             return r
-        value, r, vs, xs = propagate(original_xs.union(additional_xs), {-e for e in target})
-        if value is True:
-            return r
-        if value is False:
-            i = len(target)-1
-            while i > 0:
-                target_ = target[:i] + (-target[i],) + target[i+1:]
-                value, r, _, _ = propagate(original_xs.union(additional_xs), {-e for e in target_})
-                if value is True:
-                    return r
-                if value is False:
-                    target = tuple(e for j, e in enumerate(target) if j != i)
-                i -= 1
-            for t in list(targets):
-                if all(e in t for e in target):
-                    targets.remove(t)
-            additional_xs.add(clause(target))
-            for t in list(additional_xs):
-                if t != clause(target) and all(e in t for e in target):
-                    additional_xs.remove(t)
-            continue
-        variables = list(sorted(abs(v) for v in vs))
-        length = len(variables)
-        last_index_past = int(math.ceil(n_variables_factor * length))
-        variables = variables[:last_index_past]
-        for v in variables:
-            target_ = target + (v,)
-            if target_ not in targets:
-                if not any(all(e in target_ for e in t) for t in targets):
-                    targets.append(target_)
-                    target = target + (-v,)
+        if any(all(e in target for e in x) for x in xs.union(targets)):
+            value = False
+        while value is False:
+            if not target:
+                return None
+            targets.add(clause(target))
+            clean(targets)
+            target = target[:-1] + (-target[-1],)
+            if clause(target) in targets or any(all(e in target for e in x) for x in targets):
+                target = target[:-1]
+            xs = set(original_xs)
+            value, r, vs, xs = propagate(xs.union(targets), {-e for e in target})
+            if value is True:
+                return r
+            if any(all(e in target for e in x) for x in xs.union(targets)):
+                value = False
+        if value is None:
+            x = max(xs, key=len)
+            target = target + x
 
 
 def main():
@@ -166,13 +153,10 @@ def main():
     if args and "split" in args:
         args.remove("split")
         split = True
-    n_variables_factor = 0.5
-    if args:
-        n_variables_factor = float(args[0])
 
     while True:
         counter_ = counter
-        r = rec(xs, additional_xs, n_variables_factor=n_variables_factor)
+        r = rec(xs, additional_xs)
         if r is not None:
             total += 1
         print("\n\t", r is not None, counter - counter_, total)
@@ -194,7 +178,7 @@ def main():
         counter = 0
         rs_.pop()
         size = len(xs_.union(rs_))
-        r = rec(xs_.union(rs_), n_variables_factor=n_variables_factor)
+        r = rec(xs_.union(rs_))
         print("\n\t", r is not None, counter, size)
         reverse_stats.append((size, counter))
     max_forward = max(stats, key=lambda t: t[1])
