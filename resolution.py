@@ -1,4 +1,4 @@
-from sat import clause, get_variables, randomize, propagate
+from sat import clause, get_variables, propagate
 from sat import generate_assignment
 from functools import wraps
 import random
@@ -89,12 +89,95 @@ def rec(original_xs, additional_xs=None):
             target = target + x
 
 
+@update_additional_clauses
+def symmetry_breaking(xs, additional_xs=None):
+    global counter
+    if additional_xs is None:
+        additional_xs = set()
+
+    # variables = list(sorted(get_variables(xs)))
+    # scores = {}
+    # for v in variables:
+    #     for v_ in v, -v:
+    #         scores[v_] = 1
+    # increment = 1
+
+    def exchange_vars(xs, a, b):
+        if isinstance(a, int) and isinstance(b, int):
+            result_xs = set()
+            for x in xs:
+                x_ = tuple(sorted(((e > 0)-(e < 0))*b if e == a else ((e > 0)-(e < 0))*a if e == b else e for e in x))
+                result_xs.add(x_)
+        else:
+            result_xs = set(xs)
+        return result_xs
+
+    def exchange_vars_mapping(mapping, a, b):
+        mapping[a] = b
+        mapping[-a] = -b
+        return mapping
+
+    def get_lit(mapping, e):
+        if e in mapping:
+            return mapping[e]
+        return e
+
+    xs = set(xs)
+    xss = [xs]
+    mappings = [{}]
+    assignments = [set()]
+    non_renameable_pairs = set()
+
+    while xss and mappings:
+        counter += 1
+        xs = xss.pop()
+        mapping = mappings.pop()
+        assignment = assignments.pop()
+        print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(xs)}\t{len(assignment)}", end="")
+        xs_after = set()
+        for x in sorted(xs, key=len, reverse=True):
+            for i, e in enumerate(x):
+                if abs(e) not in mapping:
+                    for f in x[i+1:]:
+                        if abs(f) not in mapping:
+                            xs_ = exchange_vars(xs, e, f)
+                            if xs != xs_:
+                                non_renameable_pairs.add((e, f))
+                            else:
+                                mapping[f] = e
+                    break
+            else:
+                continue
+            break
+        xs_after = {tuple(sorted({get_lit(mapping, e) for e in x})) for x in xs}
+        value, r, vs, xs_ = propagate(xs_after, assignment)
+        if value is True:
+            return r
+        if value is False:
+            return None
+        if xs_after == xs:
+            v = min(vs, key=abs)
+            for v in v, -v:
+                value, r, _, xs_ = propagate(xs_after, assignment.union({v}))
+                if value is True:
+                    return r
+                if value is False:
+                    continue
+                xss.append(xs_)
+                mappings.append(mapping)
+                assignments.append(r)
+        else:
+            xss.append(xs_)
+            mappings.append(mapping)
+            assignments.append(r)
+
+
 def main():
     import sys  # For command line arguments
     global counter
     random.seed(1)
     ratio = 4.27
-    n = 100
+    n = 110
     m = int(math.ceil(n * ratio))
     k = 3
     print(f"Clauses to variables ratio: {ratio}, with {n} variables and {m} clauses....")
@@ -133,10 +216,10 @@ def main():
                 break
         return variables, xs
 
-    s = clause(generate_assignment(n))
-    _, xs = random_instance_given_assignments(n, m, k, {s})
+    # s = clause(generate_assignment(n))
+    # _, xs = random_instance_given_assignments(n, m, k, {s})
     # _, xs = random_instance_given_assignments(n, None, k, {s})
-    # _, xs = random_instance_given_assignments(n, m, k)
+    _, xs = random_instance_given_assignments(n, m, k)
     # _, xs = random_instance_given_assignments(n, None, k)
     #
     print(len(xs), len(get_variables(xs)))
@@ -144,7 +227,6 @@ def main():
     counter = 0
     total = 0
     vs = get_variables(xs)
-    xs_ = set(xs)
     rs_ = []
     additional_xs = set()
     stats = []
@@ -156,10 +238,16 @@ def main():
 
     while True:
         counter_ = counter
-        r = rec(xs, additional_xs)
+        r = symmetry_breaking(xs, additional_xs)
         if r is not None:
+            r = {e for e in r if abs(e) in vs}
+            for v in vs:
+                if -v not in r:
+                    r.add(v)
+                if v not in r:
+                    r.add(-v)
             total += 1
-        print("\n\t", r is not None, counter - counter_, total)
+        print("\n\t", r is not None, all(r is None or any(e in r for e in x) for x in xs), counter - counter_, total)
         stats.append((len(xs), counter - counter_))
         if r is None:
             break
@@ -171,19 +259,6 @@ def main():
         xs.add(r)
         if r not in rs_:
             rs_.append(r)
-        clean(xs)
-        clean(additional_xs)
-    reverse_stats = []
-    while rs_:
-        counter = 0
-        rs_.pop()
-        size = len(xs_.union(rs_))
-        r = rec(xs_.union(rs_))
-        print("\n\t", r is not None, counter, size)
-        reverse_stats.append((size, counter))
-    max_forward = max(stats, key=lambda t: t[1])
-    max_reverse = max([(None, 0)] + reverse_stats, key=lambda t: t[1])
-    print(f"Maximums: {max_forward} (forward), {max_reverse} (reverse)")
 
 
 if __name__ == '__main__':
