@@ -55,61 +55,25 @@ def update_additional_clauses(fn):
 
 
 @update_additional_clauses
-def rec(original_xs, additional_xs=None):
-    global counter
-    if additional_xs is None:
-        additional_xs = set()
-    targets = additional_xs
-    target = ()
-    xs = set(original_xs)
-    while True:
-        counter += 1
-        print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(targets)}\t{len(target)}", end="")
-        value, r, vs, xs = propagate(xs.union(targets), {-e for e in target})
-        if value is True:
-            return r
-        if any(all(e in target for e in x) for x in xs.union(targets)):
-            value = False
-        while value is False:
-            if not target:
-                return None
-            targets.add(clause(target))
-            clean(targets)
-            target = target[:-1] + (-target[-1],)
-            if clause(target) in targets or any(all(e in target for e in x) for x in targets):
-                target = target[:-1]
-            xs = set(original_xs)
-            value, r, vs, xs = propagate(xs.union(targets), {-e for e in target})
-            if value is True:
-                return r
-            if any(all(e in target for e in x) for x in xs.union(targets)):
-                value = False
-        if value is None:
-            x = max(xs, key=len)
-            target = target + x
-
-
-@update_additional_clauses
 def symmetry_breaking(xs, additional_xs=None):
+    from sat import get_literals
     global counter
     if additional_xs is None:
         additional_xs = set()
 
-    # variables = list(sorted(get_variables(xs)))
-    # scores = {}
-    # for v in variables:
-    #     for v_ in v, -v:
-    #         scores[v_] = 1
-    # increment = 1
+    if not xs:
+        return set()
+    if not all(xs):
+        return None
 
-    def exchange_vars(xs, a, b):
-        if isinstance(a, int) and isinstance(b, int):
+    def exchange_vars(xs, mapping):
+        result_xs = set(xs)
+        for a, b in mapping.items():
             result_xs = set()
             for x in xs:
-                x_ = tuple(sorted(((e > 0)-(e < 0))*b if e == a else ((e > 0)-(e < 0))*a if e == b else e for e in x))
+                x_ = tuple(sorted((((e > 0)-(e < 0))*abs(b) if abs(e) == abs(a) else ((e > 0)-(e < 0))*abs(a) if abs(e) == abs(b) else e for e in x), key=abs))
                 result_xs.add(x_)
-        else:
-            result_xs = set(xs)
+            xs = result_xs
         return result_xs
 
     def exchange_vars_mapping(mapping, a, b):
@@ -120,56 +84,73 @@ def symmetry_breaking(xs, additional_xs=None):
     def get_lit(mapping, e):
         if e in mapping:
             return mapping[e]
+        if -e in mapping:
+            return -mapping[-e]
         return e
 
     xs = set(xs)
     xss = [xs]
-    mappings = [{}]
     assignments = [set()]
-    non_renameable_pairs = set()
 
-    while xss and mappings:
+    while xss:
         counter += 1
+        clean(additional_xs)
         xs = xss.pop()
-        mapping = mappings.pop()
         assignment = assignments.pop()
+        value, r, vs, xs = propagate(xs.union(additional_xs), assignment)
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(xs)}\t{len(assignment)}", end="")
-        xs_after = set()
-        for x in sorted(xs, key=len, reverse=True):
-            for i, e in enumerate(x):
-                if abs(e) not in mapping:
-                    for f in x[i+1:]:
-                        if abs(f) not in mapping:
-                            xs_ = exchange_vars(xs, e, f)
-                            if xs != xs_:
-                                non_renameable_pairs.add((e, f))
-                            else:
-                                mapping[f] = e
-                    break
-            else:
-                continue
-            break
-        xs_after = {tuple(sorted({get_lit(mapping, e) for e in x})) for x in xs}
-        value, r, vs, xs_ = propagate(xs_after, assignment)
         if value is True:
             return r
         if value is False:
-            return None
-        if xs_after == xs:
+            additional_xs.add(clause(-f for f in assignment))
+            continue
+        x = max(xs, key=len)
+        found = True
+        element = None
+        mapping = dict()
+        for i, element in enumerate(x):
+            for e in x[i+1:]:
+                exchange_vars_mapping(mapping, e, element)
+                exchange_vars_mapping(mapping, element, e)
+                connections = get_literals(xs).difference(x).difference({-f for f in x})
+                try:
+                    for a in connections:
+                        for b in connections:
+                            if abs(a) != abs(b):
+                                if a not in mapping and b not in mapping and -a not in mapping and -b not in mapping:
+                                    if a not in mapping.values() and b not in mapping.values() and -a not in mapping.values() and -b not in mapping.values():
+                                        mapping_ = dict(mapping)
+                                        exchange_vars_mapping(mapping_, b, a)
+                                        exchange_vars_mapping(mapping_, a, b)
+                                        xs__ = exchange_vars(xs,  mapping_)
+                                        if xs__ == xs:
+                                            mapping = mapping_
+                                            raise ValueError
+                except ValueError:
+                    continue
+                found = False
+        if found:
+            value, r_, _, xs_ = propagate(xs.union(additional_xs), r.union({element}))
+            if value is True:
+                return r_
+            if value is False:
+                additional_xs.add(clause(-f for f in assignment.union({element})))
+                continue
+            if xs_ not in xss:
+                xss.append(xs_)
+                assignments.append(r_)
+        else:
             v = min(vs, key=abs)
             for v in v, -v:
-                value, r, _, xs_ = propagate(xs_after, assignment.union({v}))
-                if value is True:
-                    return r
-                if value is False:
+                value_, r_, _, xs_ = propagate(xs.union(additional_xs), r.union({v}))
+                if value_ is True:
+                    return r_
+                if value_ is False:
+                    additional_xs.add(clause(-e for e in assignment.union({v})))
                     continue
-                xss.append(xs_)
-                mappings.append(mapping)
-                assignments.append(r)
-        else:
-            xss.append(xs_)
-            mappings.append(mapping)
-            assignments.append(r)
+                if xs_ not in xss:
+                    xss.append(xs_)
+                    assignments.append(r_)
 
 
 def main():
@@ -229,7 +210,6 @@ def main():
     vs = get_variables(xs)
     rs_ = []
     additional_xs = set()
-    stats = []
     split = False
     args = list(sys.argv[1:])
     if args and "split" in args:
@@ -248,7 +228,6 @@ def main():
                     r.add(-v)
             total += 1
         print("\n\t", r is not None, all(r is None or any(e in r for e in x) for x in xs), counter - counter_, total)
-        stats.append((len(xs), counter - counter_))
         if r is None:
             break
         r = clause(-e for e in r if abs(e) in vs)
