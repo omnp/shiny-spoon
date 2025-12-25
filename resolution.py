@@ -66,91 +66,129 @@ def symmetry_breaking(xs, additional_xs=None):
     if not all(xs):
         return None
 
-    def exchange_vars(xs, mapping):
-        result_xs = set(xs)
-        for a, b in mapping.items():
-            result_xs = set()
-            for x in xs:
-                x_ = tuple(sorted((((e > 0)-(e < 0))*abs(b) if abs(e) == abs(a) else ((e > 0)-(e < 0))*abs(a) if abs(e) == abs(b) else e for e in x), key=abs))
-                result_xs.add(x_)
-            xs = result_xs
-        return result_xs
-
-    def exchange_vars_mapping(mapping, a, b):
+    def map(mapping, a, b):
         mapping[a] = b
         mapping[-a] = -b
         return mapping
 
-    def get_lit(mapping, e):
-        if e in mapping:
-            return mapping[e]
-        if -e in mapping:
-            return -mapping[-e]
-        return e
+    def apply_clause(mapping, x):
+        x = clause(set(mapping[e] if e in mapping else e for e in x))
+        return x
 
-    xs = set(xs)
-    xss = [xs]
+    def apply(mapping, xs):
+        xs = {apply_clause(mapping, x) for x in xs}
+        return xs
+
+    original_xs = set(xs)
     assignments = [set()]
+    all_assignments = set()
 
-    while xss:
+    while assignments:
         counter += 1
         clean(additional_xs)
-        xs = xss.pop()
         assignment = assignments.pop()
-        value, r, vs, xs = propagate(xs.union(additional_xs), assignment)
+        value, r, vs, xs = propagate(original_xs.union(additional_xs), assignment)
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(xs)}\t{len(assignment)}", end="")
         if value is True:
             return r
         if value is False:
             additional_xs.add(clause(-f for f in assignment))
             continue
-        x = max(xs, key=len)
-        found = True
-        element = None
-        mapping = dict()
-        for i, element in enumerate(x):
-            for e in x[i+1:]:
-                exchange_vars_mapping(mapping, e, element)
-                exchange_vars_mapping(mapping, element, e)
-                connections = get_literals(xs).difference(x).difference({-f for f in x})
-                try:
-                    for a in connections:
-                        for b in connections:
-                            if abs(a) != abs(b):
-                                if a not in mapping and b not in mapping and -a not in mapping and -b not in mapping:
-                                    if a not in mapping.values() and b not in mapping.values() and -a not in mapping.values() and -b not in mapping.values():
-                                        mapping_ = dict(mapping)
-                                        exchange_vars_mapping(mapping_, b, a)
-                                        exchange_vars_mapping(mapping_, a, b)
-                                        xs__ = exchange_vars(xs,  mapping_)
-                                        if xs__ == xs:
-                                            mapping = mapping_
-                                            raise ValueError
-                except ValueError:
-                    continue
-                found = False
+        found = False
+        found_element = None
+        xs_ = {x for x in xs if all(1 >= sum(1 if e in y else 0 for y in xs) for e in x)}
+        for x in xs_:
+            found = True
+            for i, element in enumerate(x):
+                found = True
+                mapping = dict()
+                for e in x[i+1:]:
+                    map(mapping, e, element)
+                    map(mapping, element, e)
+                    connections = get_literals(xs).difference(x).difference({-f for f in x})
+                    try:
+                        for a in connections:
+                            for b in connections:
+                                if abs(a) != abs(b):
+                                    if a not in mapping and b not in mapping and -a not in mapping and -b not in mapping:
+                                        if a not in mapping.values() and b not in mapping.values() and -a not in mapping.values() and -b not in mapping.values():
+                                            mapping_ = dict(mapping)
+                                            map(mapping_, b, a)
+                                            map(mapping_, a, b)
+                                            xs__ = apply(mapping_, xs)
+                                            if xs__ == xs:
+                                                mapping = mapping_
+                                                raise ValueError
+                    except ValueError:
+                        continue
+                    found = False
+                    break
+                if found:
+                    found_element = element
+                    break
+            if found:
+                break
+        if found is False:
+            vs_ = {e for e in vs if 1 >= sum(1 if e in y else 0 for y in xs)}
+            # vs_ = vs
+            for element in sorted(vs_, key=abs):
+                found_ = True
+                mapping = dict()
+                for e in vs_.difference({element}):
+                    map(mapping, e, element)
+                    map(mapping, element, e) 
+                    connections = vs_.difference({element, -element, e, -e})
+                    try:
+                        for a in connections:
+                            for b in connections:
+                                if abs(a) != abs(b):
+                                    if a not in mapping and b not in mapping and -a not in mapping and -b not in mapping:
+                                        if a not in mapping.values() and b not in mapping.values() and -a not in mapping.values() and -b not in mapping.values():
+                                            mapping_ = dict(mapping)
+                                            map(mapping_, b, a)
+                                            map(mapping_, a, b)
+                                            xs__ = apply(mapping_, xs)
+                                            if xs__ == xs:
+                                                mapping = mapping_
+                                                raise ValueError
+                    except ValueError:
+                         break
+                else:
+                    found_ = False
+                if found_:
+                    e = mapping[element]
+                    mapping = map({}, mapping[element], element)
+                    xs = apply(mapping, xs)
+                    xs.add(clause({-element, e}))
+                    value, r, vs, xs = propagate(xs, r)
+                    vs_ = {e for e in vs if 1 >= sum(1 if e in y else 0 for y in xs)}
+                    # vs_ = vs
+                    found = False
         if found:
+            # print(f"element: {found_element}")
+            element = found_element
             value, r_, _, xs_ = propagate(xs.union(additional_xs), r.union({element}))
             if value is True:
                 return r_
             if value is False:
                 additional_xs.add(clause(-f for f in assignment.union({element})))
                 continue
-            if xs_ not in xss:
-                xss.append(xs_)
-                assignments.append(r_)
+            if clause(assignment.union({element})) not in all_assignments:
+                all_assignments.add(clause(assignment.union({element})))
+                assignments.append(assignment.union({element}))
         else:
             v = min(vs, key=abs)
+            # print("v", v)
             for v in v, -v:
                 value_, r_, _, xs_ = propagate(xs.union(additional_xs), r.union({v}))
-                if value_ is True:
+                if value is True:
                     return r_
                 if value_ is False:
                     additional_xs.add(clause(-e for e in assignment.union({v})))
                     continue
-                if xs_ not in xss:
-                    xss.append(xs_)
-                    assignments.append(r_)
+                if clause(assignment.union({v})) not in all_assignments:
+                    all_assignments.add(clause(assignment.union({v})))
+                    assignments.append(assignment.union({v}))
 
 
 def main():
