@@ -1,5 +1,4 @@
 from sat import clause, get_variables, propagate
-from sat import generate_assignment
 from functools import wraps
 import random
 import math
@@ -54,9 +53,68 @@ def update_additional_clauses(fn):
     return wrap
 
 
+def map(mapping, a, b):
+    mapping[a] = b
+    mapping[-a] = -b
+    return mapping
+
+
+def invert(mapping):
+    inverse = {}
+    for k, v in mapping.items():
+        inverse[v] = k
+    return inverse
+
+
+def apply_clause(mapping, x):
+    x = clause(set(mapping[e] if e in mapping else e for e in x))
+    return x
+
+
+def apply(mapping, xs):
+    xs = {apply_clause(mapping, x) for x in xs}
+    return xs
+
+
+def preprocess(xs, initial_mapping=None, random_mapping=None):
+    import random
+    if random_mapping is None:
+        random_mapping = False
+    if initial_mapping is None:
+        initial_mapping = {}
+    vs = list(sorted(get_variables(xs)))
+    mapping = dict(initial_mapping)
+    lits = list(vs)
+    if not random_mapping:
+        while True:
+            mapping_ = dict(mapping)
+            counts = {v: 0 for v in vs}
+            for x in xs:
+                for e in x:
+                    counts[abs(e)] += 1
+            lits.sort(key=lambda v: counts[v], reverse=True)
+            for u, v in zip(lits, vs):
+                mapping = map(mapping, u, v)
+            if mapping_ == mapping:
+                break
+            xs = apply(mapping, xs)
+    else:
+        random.shuffle(lits)
+        for u, v in zip(lits, vs):
+            mapping = map(mapping, u, v)
+    return mapping
+
+
+def identity(xs):
+    from sat import get_literals
+    vs = list(sorted(get_literals(xs)))
+    mapping = {v: v for v in vs}
+    return mapping
+
+
 @update_additional_clauses
 def symmetry_breaking(xs, additional_xs=None):
-    from sat import get_literals
+    from sat import get_literals, resolve
     global counter
     if additional_xs is None:
         additional_xs = set()
@@ -66,34 +124,44 @@ def symmetry_breaking(xs, additional_xs=None):
     if not all(xs):
         return None
 
-    def map(mapping, a, b):
-        mapping[a] = b
-        mapping[-a] = -b
-        return mapping
-
-    def apply_clause(mapping, x):
-        x = clause(set(mapping[e] if e in mapping else e for e in x))
-        return x
-
-    def apply(mapping, xs):
-        xs = {apply_clause(mapping, x) for x in xs}
-        return xs
-
     original_xs = set(xs)
     assignments = [set()]
     all_assignments = set()
+    scores = {v: 0 for v in get_literals(xs)}
+    increment = 1
+
+    def update_scores(x):
+        nonlocal scores
+        nonlocal increment
+        for v in x:
+            scores[v] += increment
+        increment += 1
 
     while assignments:
         counter += 1
         clean(additional_xs)
         assignment = assignments.pop()
-        value, r, vs, xs = propagate(original_xs.union(additional_xs), assignment)
+        xs = original_xs.union(additional_xs)
+        initial_mapping = preprocess(xs, random_mapping=False)
+        inverse_initial_mapping = invert(initial_mapping)
+        xs = apply(initial_mapping, xs)
+        value, r, vs, xs = propagate(xs, {initial_mapping[e] for e in assignment})
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(xs)}\t{len(assignment)}", end="")
         if value is True:
+            r = {inverse_initial_mapping[e] for e in r}
             return r
         if value is False:
-            additional_xs.add(clause(-f for f in assignment))
+            t = clause(-f for f in assignment)
+            for x in original_xs.union(additional_xs):
+                y = resolve(t, x)
+                if y is not None and len(y) < len(t):
+                    t = y
+            additional_xs.add(t)
+            update_scores(tuple(e for e in t))
             continue
+        count_mapping = preprocess(xs, random_mapping=False)
+        inverse_count_mapping = invert(count_mapping)
+        xs = apply(count_mapping, xs)
         found = False
         found_element = None
         xs_ = {x for x in xs if all(1 >= sum(1 if e in y else 0 for y in xs) for e in x)}
@@ -128,67 +196,53 @@ def symmetry_breaking(xs, additional_xs=None):
                     break
             if found:
                 break
-        if found is False:
-            vs_ = {e for e in vs if 1 >= sum(1 if e in y else 0 for y in xs)}
-            # vs_ = vs
-            for element in sorted(vs_, key=abs):
-                found_ = True
-                mapping = dict()
-                for e in vs_.difference({element}):
-                    map(mapping, e, element)
-                    map(mapping, element, e) 
-                    connections = vs_.difference({element, -element, e, -e})
-                    try:
-                        for a in connections:
-                            for b in connections:
-                                if abs(a) != abs(b):
-                                    if a not in mapping and b not in mapping and -a not in mapping and -b not in mapping:
-                                        if a not in mapping.values() and b not in mapping.values() and -a not in mapping.values() and -b not in mapping.values():
-                                            mapping_ = dict(mapping)
-                                            map(mapping_, b, a)
-                                            map(mapping_, a, b)
-                                            xs__ = apply(mapping_, xs)
-                                            if xs__ == xs:
-                                                mapping = mapping_
-                                                raise ValueError
-                    except ValueError:
-                         break
-                else:
-                    found_ = False
-                if found_:
-                    e = mapping[element]
-                    mapping = map({}, mapping[element], element)
-                    xs = apply(mapping, xs)
-                    xs.add(clause({-element, e}))
-                    value, r, vs, xs = propagate(xs, r)
-                    vs_ = {e for e in vs if 1 >= sum(1 if e in y else 0 for y in xs)}
-                    # vs_ = vs
-                    found = False
         if found:
             # print(f"element: {found_element}")
             element = found_element
-            value, r_, _, xs_ = propagate(xs.union(additional_xs), r.union({element}))
+            value, r_, _, xs_ = propagate(xs.union(apply(count_mapping, apply(initial_mapping, additional_xs))), set(apply_clause(count_mapping, r)).union({element}))
             if value is True:
+                r_ = set(apply_clause(inverse_count_mapping, r_))
+                r_ = {inverse_initial_mapping[e] for e in r_}
                 return r_
             if value is False:
-                additional_xs.add(clause(-f for f in assignment.union({element})))
+                t = clause(-f for f in assignment.union({inverse_initial_mapping[inverse_count_mapping[element]]}))
+                for x in original_xs.union(additional_xs):
+                    y = resolve(t, x)
+                    if y is not None and len(y) < len(t):
+                        t = y
+                additional_xs.add(t)
+                update_scores(tuple(e for e in t))
                 continue
-            if clause(assignment.union({element})) not in all_assignments:
-                all_assignments.add(clause(assignment.union({element})))
-                assignments.append(assignment.union({element}))
+            t = clause(assignment.union({inverse_initial_mapping[inverse_count_mapping[element]]}))
+            if t not in all_assignments:
+                all_assignments.add(t)
+                assignments.append(set(t))
         else:
+            vs = {inverse_initial_mapping[v] for v in vs}
+            v = max(vs, key=lambda v: scores[v])
+            vs = list(u for u in vs if scores[u] >= scores[v])
+            vs = list(count_mapping[initial_mapping[v]] for v in vs)
             v = min(vs, key=abs)
             # print("v", v)
-            for v in v, -v:
-                value_, r_, _, xs_ = propagate(xs.union(additional_xs), r.union({v}))
-                if value is True:
+            for v in -v, v:
+                value_, r_, _, xs_ = propagate(xs.union(apply(count_mapping, apply(initial_mapping, additional_xs))), set(apply_clause(count_mapping, r)).union({v}))
+                if value_ is True:
+                    r_ = set(apply_clause(inverse_count_mapping, r_))
+                    r_ = {inverse_initial_mapping[e] for e in r_}
                     return r_
                 if value_ is False:
-                    additional_xs.add(clause(-e for e in assignment.union({v})))
+                    t = clause(-f for f in assignment.union({inverse_initial_mapping[inverse_count_mapping[v]]}))
+                    for x in original_xs.union(additional_xs):
+                        y = resolve(t, x)
+                        if y is not None and len(y) < len(t):
+                            t = y
+                    additional_xs.add(t)
+                    update_scores(tuple(e for e in t))
                     continue
-                if clause(assignment.union({v})) not in all_assignments:
-                    all_assignments.add(clause(assignment.union({v})))
-                    assignments.append(assignment.union({v}))
+                t = clause(assignment.union({inverse_initial_mapping[inverse_count_mapping[v]]}))
+                if t not in all_assignments:
+                    all_assignments.add(t)
+                    assignments.append(set(t))
 
 
 def main():
@@ -199,16 +253,17 @@ def main():
     n = 110
     m = int(math.ceil(n * ratio))
     k = 3
-    print(f"Clauses to variables ratio: {ratio}, with {n} variables and {m} clauses....")
-    print(f"(Clause length: {k})")
+    h = 3  # <= Number of satisfying assignments
 
-    from sat import randomize_order
+    from sat import randomize_order, generate_assignment, partials, randomize
 
-    def random_instance_given_assignments(n, m=None, k=None, assignments=None):
+    def random_instance_given_assignments(n, m=None, k=None, assignments=None, clustered=None):
         """
         Generates a random instance targeted to have n variables, m clauses,
         with clause length equal to k.
         """
+        if clustered is None:
+            clustered = False
         if assignments is None:
             assignments = set()
         if k is None:
@@ -219,6 +274,28 @@ def main():
         counter = 0
         limit = 512
         variables = tuple(range(1, 1 + n))
+        if clustered:
+            clusters = {tuple(range(i, min(1 + n, i + k))) for i in range(1, 1 + n, k)}
+            generators = {}
+            for cluster in clusters:
+                generators[cluster] = partials(cluster)
+            while len(xs) < m:
+                n_ = len(xs)
+                for cluster in generators:
+                    try:
+                        x = next(generators[cluster])
+                        if not any(all(-e in s for e in x) for s in assignments):
+                            if len(xs) < m:
+                                xs.add(x)
+                    except StopIteration:
+                        pass
+                if n_ == len(xs):
+                    counter += 1
+                else:
+                    counter = 0
+                if counter >= limit:
+                    break
+            return variables, xs
         while len(xs) < m:
             n_ = len(xs)
             x = clause(
@@ -235,12 +312,25 @@ def main():
                 break
         return variables, xs
 
-    # s = clause(generate_assignment(n))
-    # _, xs = random_instance_given_assignments(n, m, k, {s})
-    # _, xs = random_instance_given_assignments(n, None, k, {s})
-    _, xs = random_instance_given_assignments(n, m, k)
+    # s = {clause(generate_assignment(n)) for _ in range(h)}
+    # _, xs = random_instance_given_assignments(n, m, k, s)
+    # _, xs = random_instance_given_assignments(n, None, k, s)
+    # _, xs = random_instance_given_assignments(n, None, k, s, clustered=True)
+    # _, xs = random_instance_given_assignments(n, m, k)
     # _, xs = random_instance_given_assignments(n, None, k)
-    #
+    _, xs = random_instance_given_assignments(n, None, k, clustered=True)
+    # import php
+    # xs = php.php(5, 4)
+    # xs = php.php(4, 4)
+    # import waerden
+    # xs = waerden.waerden(3, 5, 21)
+    # xs = waerden.waerden(4, 5, 54)
+    # with open("examples/factoring2017-0006.dimacs") as file:
+        # import dimacs
+        # text = file.read()
+        # _, xs = dimacs.parse_dimacs(text)
+        # xs = {clause(set(x)) for x in xs if not any(-e in x for e in x)}
+    xs = randomize(xs)
     print(len(xs), len(get_variables(xs)))
     xs = set(xs)
     counter = 0
