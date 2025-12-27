@@ -125,8 +125,7 @@ def symmetry_breaking(xs, additional_xs=None):
         return None
 
     original_xs = set(xs)
-    assignments = [set()]
-    all_assignments = set()
+    assignments = [{}]
     scores = {v: 0 for v in get_literals(xs)}
     increment = 1
 
@@ -135,12 +134,29 @@ def symmetry_breaking(xs, additional_xs=None):
         nonlocal increment
         for v in x:
             scores[v] += increment
-        increment += 1
+        increment /= 0.90
+        if increment > 1e100:
+            for v in scores:
+                scores[v] *= 1e-100
+            increment *= 1e-100
+
+    def restart(level=None):
+        nonlocal assignments
+        if level is None:
+            assignments = [{}]
+        else:
+            for x in list(assignments):
+                if x.values() and max(x.values()) > level:
+                    assignments.remove(x)
 
     while assignments:
         counter += 1
         clean(additional_xs)
         assignment = assignments.pop()
+        if not assignment:
+            level = 0
+        else:
+            level = max(assignment.values())
         xs = original_xs.union(additional_xs)
         initial_mapping = preprocess(xs, random_mapping=False)
         inverse_initial_mapping = invert(initial_mapping)
@@ -152,13 +168,18 @@ def symmetry_breaking(xs, additional_xs=None):
             return r
         if value is False:
             t = clause(-f for f in assignment)
+            assert not any(all(-e in x for e in t) for x in assignments)
             for x in original_xs.union(additional_xs):
                 y = resolve(t, x)
                 if y is not None and len(y) < len(t):
                     t = y
             additional_xs.add(t)
-            update_scores(tuple(e for e in t))
-            continue
+            update_scores(tuple(-e for e in t))
+            if assignment and t:
+                lev = assignment[max({e for e in assignment if -e in t}, key=lambda e: assignment[e])]
+                restart(level=lev)
+                continue
+            return None
         count_mapping = preprocess(xs, random_mapping=False)
         inverse_count_mapping = invert(count_mapping)
         xs = apply(count_mapping, xs)
@@ -197,7 +218,6 @@ def symmetry_breaking(xs, additional_xs=None):
             if found:
                 break
         if found:
-            # print(f"element: {found_element}")
             element = found_element
             value, r_, _, xs_ = propagate(xs.union(apply(count_mapping, apply(initial_mapping, additional_xs))), set(apply_clause(count_mapping, r)).union({element}))
             if value is True:
@@ -205,25 +225,30 @@ def symmetry_breaking(xs, additional_xs=None):
                 r_ = {inverse_initial_mapping[e] for e in r_}
                 return r_
             if value is False:
-                t = clause(-f for f in assignment.union({inverse_initial_mapping[inverse_count_mapping[element]]}))
+                assignment = dict(assignment)
+                assignment[inverse_initial_mapping[inverse_count_mapping[element]]] = level + 1
+                t = clause(-f for f in assignment)
                 for x in original_xs.union(additional_xs):
                     y = resolve(t, x)
                     if y is not None and len(y) < len(t):
                         t = y
                 additional_xs.add(t)
-                update_scores(tuple(e for e in t))
-                continue
-            t = clause(assignment.union({inverse_initial_mapping[inverse_count_mapping[element]]}))
-            if t not in all_assignments:
-                all_assignments.add(t)
-                assignments.append(set(t))
+                update_scores(tuple(-e for e in t))
+                if assignment and t:
+                    lev = assignment[max({e for e in assignment if -e in t}, key=lambda e: assignment[e])]
+                    restart(level=lev)
+                    continue
+                return None
+            scores[inverse_initial_mapping[inverse_count_mapping[element]]] += 2*increment
+            assignment = dict(assignment)
+            assignment[inverse_initial_mapping[inverse_count_mapping[element]]] = level + 1
+            assignments.append(assignment)
         else:
             vs = {inverse_initial_mapping[v] for v in vs}
             v = max(vs, key=lambda v: scores[v])
             vs = list(u for u in vs if scores[u] >= scores[v])
             vs = list(count_mapping[initial_mapping[v]] for v in vs)
-            v = min(vs, key=abs)
-            # print("v", v)
+            v = max(vs, key=abs)
             for v in -v, v:
                 value_, r_, _, xs_ = propagate(xs.union(apply(count_mapping, apply(initial_mapping, additional_xs))), set(apply_clause(count_mapping, r)).union({v}))
                 if value_ is True:
@@ -231,18 +256,23 @@ def symmetry_breaking(xs, additional_xs=None):
                     r_ = {inverse_initial_mapping[e] for e in r_}
                     return r_
                 if value_ is False:
-                    t = clause(-f for f in assignment.union({inverse_initial_mapping[inverse_count_mapping[v]]}))
+                    assignment_v = dict(assignment)
+                    assignment_v[inverse_initial_mapping[inverse_count_mapping[v]]] = level + 1
+                    t = clause(-f for f in assignment_v)
                     for x in original_xs.union(additional_xs):
                         y = resolve(t, x)
                         if y is not None and len(y) < len(t):
                             t = y
                     additional_xs.add(t)
-                    update_scores(tuple(e for e in t))
-                    continue
-                t = clause(assignment.union({inverse_initial_mapping[inverse_count_mapping[v]]}))
-                if t not in all_assignments:
-                    all_assignments.add(t)
-                    assignments.append(set(t))
+                    update_scores(tuple(-e for e in t))
+                    if assignment_v and t:
+                        lev = assignment_v[max({e for e in assignment_v if -e in t}, key=lambda e: assignment_v[e])]
+                        restart(level=lev)
+                        continue
+                    return None
+                assignment_v = dict(assignment)
+                assignment_v[inverse_initial_mapping[inverse_count_mapping[v]]] = level + 1
+                assignments.append(assignment_v)
 
 
 def main():
