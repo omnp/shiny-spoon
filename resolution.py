@@ -231,7 +231,6 @@ def symmetry_breaking(xs, additional_xs=None):
                 if x.values() and max(x.values()) > level:
                     assignments.remove(x)
 
-    _, symmetric_elements, _ = preprocess(xs)
     initial_assignment = {}
     assignments = [dict(initial_assignment)]
 
@@ -262,20 +261,19 @@ def symmetry_breaking(xs, additional_xs=None):
             additional_xs.add(t)
             continue
         found = False
+        _, symmetric_elements, _ = preprocess(xs, one=True)
         if symmetric_elements:
-            for x in sorted(xs, key=len):
-                if not any(e in r for e in x):
-                    if all(v in symmetric_elements for v in x):
-                        x_ = set(x).difference({-e for e in r})
-                        if x_:
-                            vs = {min(x_, key=abs)}
-                            found = True
-                        else:
-                            return None
+            for v in symmetric_elements:
+                if len({abs(e) for e in vs}) > 1:
+                    print(f"found symmetric element {v}")
+                vs = {v}
+                found = True
+                break
         if not found:
             _, negative_symmetric = preprocess_negative(xs, one=True)
             for v in negative_symmetric:
-                print(f"found negative symmetric: {v}")
+                if len({abs(e) for e in vs}) > 1:
+                    print(f"found negative symmetric element {v}")
                 vs = {v}
                 break
         v = max(vs, key=lambda v: scores[abs(v)])
@@ -299,7 +297,7 @@ def main():
     k = 3
     h = 3  # <= Number of satisfying assignments
 
-    from sat import randomize_order, generate_assignment, partials, randomize
+    from sat import randomize_order, generate_assignment, partials, randomize, resolve
 
     def random_instance_given_assignments(n, m=None, k=None, assignments=None, clustered=None):
         """
@@ -407,6 +405,10 @@ def main():
             r = list(r)
             random.shuffle(r)
             r = clause(r[:k])
+        for x in xs:
+            y = resolve(r, x)
+            if y is not None and len(y) < len(r):
+                r = y
         xs.add(r)
         if r not in rs_:
             rs_.append(r)
