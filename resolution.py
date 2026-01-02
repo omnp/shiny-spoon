@@ -274,6 +274,21 @@ def symmetry_breaking(xs, additional_xs=None):
                     print(f"found negative symmetric element {v}")
                 vs = {v}
                 break
+        if len(vs) > 1:
+            _, symmetric_elements_, _ = preprocess(xs, one=True)
+            _, negative_symmetric_ = preprocess_negative(xs, one=True)
+            for v in symmetric_elements_:
+                if v in vs:
+                    if len({abs(e) for e in vs}) > 1:
+                        print(f"found symmetric element {v}")
+                    vs = {v}
+                    break
+            for v in negative_symmetric_:
+                if v in vs:
+                    if len({abs(e) for e in vs}) > 1:
+                        print(f"found negative symmetric element {v}")
+                    vs = {v}
+                    break
         v = max(vs, key=lambda v: scores[abs(v)])
         vs = list(u for u in vs if scores[abs(u)] >= scores[abs(v)])
         v = min(vs, key=abs)
