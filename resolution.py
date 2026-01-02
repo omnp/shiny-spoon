@@ -233,6 +233,8 @@ def symmetry_breaking(xs, additional_xs=None):
 
     initial_assignment = {}
     assignments = [dict(initial_assignment)]
+    _, symmetric_elements, _ = preprocess(xs, one=False)
+    _, negative_symmetric = preprocess_negative(xs, one=False)
 
     while assignments:
         counter += 1
@@ -260,18 +262,14 @@ def symmetry_breaking(xs, additional_xs=None):
             update_scores(tuple(-e for e in t))
             additional_xs.add(t)
             continue
-        found = False
-        _, symmetric_elements, _ = preprocess(xs, one=True)
-        if symmetric_elements:
-            for v in symmetric_elements:
+        for v in symmetric_elements:
+            if v in vs:
                 if len({abs(e) for e in vs}) > 1:
                     print(f"found symmetric element {v}")
                 vs = {v}
-                found = True
                 break
-        if not found:
-            _, negative_symmetric = preprocess_negative(xs, one=True)
-            for v in negative_symmetric:
+        for v in negative_symmetric:
+            if v in vs:
                 if len({abs(e) for e in vs}) > 1:
                     print(f"found negative symmetric element {v}")
                 vs = {v}
