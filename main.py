@@ -16,6 +16,7 @@ if len(sys.argv) > 1:
     else:
         filename = sys.argv[1]
         with open(filename) as file:
+            import dimacs
             text = file.read()
             variables, clauses = dimacs.parse_dimacs(text)
             clauses = {sat.clause(c) for c in clauses}
