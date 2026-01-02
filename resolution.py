@@ -76,45 +76,126 @@ def apply(mapping, xs):
     return xs
 
 
-def preprocess(xs, initial_mapping=None, random_mapping=None):
-    import random
-    if random_mapping is None:
-        random_mapping = False
-    if initial_mapping is None:
-        initial_mapping = {}
-    vs = list(sorted(get_variables(xs)))
-    mapping = dict(initial_mapping)
-    lits = list(vs)
-    if not random_mapping:
-        while True:
-            mapping_ = dict(mapping)
-            counts = {v: 0 for v in vs}
-            for x in xs:
-                for e in x:
-                    counts[abs(e)] += 1
-            lits.sort(key=lambda v: counts[v], reverse=True)
-            for u, v in zip(lits, vs):
-                mapping = map(mapping, u, v)
-            if mapping_ == mapping:
+def preprocess(xs, one=None):
+    if one is None:
+        one = False
+    original_xs = set(xs)
+    symmetric_elements = set()
+    symmetric_clauses = set()
+    initial_assignment = {}
+    level = 0
+    while True:
+        level += 1
+        xs = original_xs
+        value, r, vs, xs = propagate(xs, set(initial_assignment))
+        if value is True:
+            break
+        if value is False:
+            break
+        found_elements = set()
+        vs.difference_update(symmetric_elements)
+        for element in sorted(vs, key=lambda v: sum(1 if v in x else 0 for x in xs)):
+            if element not in vs:
+                continue
+            found = True
+            xs_ = {y for y in xs if element in y}
+            y = set.union(*(set(y) for y in xs_))
+            for e in set(y).difference({element}).difference(symmetric_elements):
+                mapping = dict()
+                map(mapping, e, element)
+                map(mapping, element, e)
+                connections = vs.difference({element}).difference({e})
+                n = sum(1 if apply_clause(mapping, c) in xs else 0 for c in xs)
+                try:
+                    for a in connections:
+                        for b in connections:
+                            if abs(a) != abs(b):
+                                mapping_ = dict(mapping)
+                                map(mapping_, b, a)
+                                map(mapping_, a, b)
+                            else:
+                                mapping_ = dict(mapping)
+                                map(mapping_, b, a)
+                            m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
+                            if n <= m:
+                                n = m
+                                mapping = mapping_
+                            if n >= len(xs):
+                                raise ValueError
+                except ValueError:
+                    continue
+                found = False
                 break
-            xs = apply(mapping, xs)
-    else:
-        random.shuffle(lits)
-        for u, v in zip(lits, vs):
-            mapping = map(mapping, u, v)
-    return mapping
+            if found:
+                found_elements.add(element)
+                found_elements.update(y)
+                vs.difference_update(found_elements)
+                symmetric_clauses.update(xs_)
+                if one:
+                    break
+        if found_elements:
+            symmetric_elements.update(found_elements)
+        else:
+            break
+        if one:
+            break
+    return initial_assignment, symmetric_elements, symmetric_clauses
 
 
-def identity(xs):
-    from sat import get_literals
-    vs = list(sorted(get_literals(xs)))
-    mapping = {v: v for v in vs}
-    return mapping
+def preprocess_negative(xs, one=None):
+    if one is None:
+        one = False
+    original_xs = set(xs)
+    symmetric_elements = set()
+    initial_assignment = {}
+    level = 0
+    while True:
+        level += 1
+        xs = original_xs
+        value, r, vs, xs = propagate(xs, set(initial_assignment))
+        if value is True:
+            break
+        if value is False:
+            break
+        found_elements = set()
+        vs.difference_update(symmetric_elements)
+        for element in sorted(vs, key=lambda v: sum(1 if v in x else 0 for x in xs)):
+            mapping = dict()
+            map(mapping, -element, element)
+            connections = vs.difference({element}).difference({-element})
+            n = sum(1 if apply_clause(mapping, c) in xs else 0 for c in xs)
+            try:
+                for a in connections:
+                    for b in connections:
+                        if abs(a) != abs(b):
+                            mapping_ = dict(mapping)
+                            map(mapping_, b, a)
+                            map(mapping_, a, b)
+                        else:
+                            mapping_ = dict(mapping)
+                            map(mapping_, b, a)
+                        m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
+                        if n <= m:
+                            n = m
+                            mapping = mapping_
+                        if n >= len(xs):
+                            raise ValueError
+            except ValueError:
+                found_elements.add(element)
+                if one:
+                    break
+        if found_elements:
+            symmetric_elements.update(found_elements)
+        else:
+            break
+        if one:
+            break
+    return initial_assignment, symmetric_elements
 
 
 @update_additional_clauses
 def symmetry_breaking(xs, additional_xs=None):
-    from sat import get_literals, resolve
+    from sat import exclude, get_literals, resolve
     global counter
     if additional_xs is None:
         additional_xs = set()
@@ -125,7 +206,6 @@ def symmetry_breaking(xs, additional_xs=None):
         return None
 
     original_xs = set(xs)
-    assignments = [{}]
     scores = {v: 0 for v in get_literals(xs)}
     increment = 1
 
@@ -142,137 +222,71 @@ def symmetry_breaking(xs, additional_xs=None):
 
     def restart(level=None):
         nonlocal assignments
+        nonlocal initial_assignment
         if level is None:
-            assignments = [{}]
+            assignments.clear()
+            assignments.append(dict(initial_assignment))
         else:
             for x in list(assignments):
                 if x.values() and max(x.values()) > level:
                     assignments.remove(x)
 
+    _, symmetric_elements, _ = preprocess(xs)
+    initial_assignment = {}
+    assignments = [dict(initial_assignment)]
+
     while assignments:
         counter += 1
         clean(additional_xs)
         assignment = assignments.pop()
-        if not assignment:
-            level = 0
-        else:
-            level = max(assignment.values())
+        level = max(assignment.values(), default=0)
         xs = original_xs.union(additional_xs)
-        initial_mapping = preprocess(xs, random_mapping=False)
-        inverse_initial_mapping = invert(initial_mapping)
-        xs = apply(initial_mapping, xs)
-        value, r, vs, xs = propagate(xs, {initial_mapping[e] for e in assignment})
+        value, r, vs, xs = propagate(xs, set(assignment))
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(xs)}\t{len(assignment)}", end="")
         if value is True:
-            r = {inverse_initial_mapping[e] for e in r}
             return r
         if value is False:
-            t = clause(-f for f in assignment)
-            assert not any(all(-e in x for e in t) for x in assignments)
+            t = set(assignment)
+            for e in reversed(list(t)):
+                t_ = t.difference({e})
+                value_, _, _, _ = propagate(original_xs.union(additional_xs), set(t_))
+                if value_ is False:
+                    t = t_
+            t = clause(-f for f in t)
             for x in original_xs.union(additional_xs):
                 y = resolve(t, x)
                 if y is not None and len(y) < len(t):
-                    t = y
-            additional_xs.add(t)
-            update_scores(tuple(-e for e in t))
-            if assignment and t:
-                lev = assignment[max({e for e in assignment if -e in t}, key=lambda e: assignment[e])]
-                restart(level=lev)
-                continue
-            return None
-        count_mapping = preprocess(xs, random_mapping=False)
-        inverse_count_mapping = invert(count_mapping)
-        xs = apply(count_mapping, xs)
-        found = False
-        found_element = None
-        xs_ = {x for x in xs if all(1 >= sum(1 if e in y else 0 for y in xs) for e in x)}
-        for x in xs_:
-            found = True
-            for i, element in enumerate(x):
-                found = True
-                mapping = dict()
-                for e in x[i+1:]:
-                    map(mapping, e, element)
-                    map(mapping, element, e)
-                    connections = get_literals(xs).difference(x).difference({-f for f in x})
-                    try:
-                        for a in connections:
-                            for b in connections:
-                                if abs(a) != abs(b):
-                                    if a not in mapping and b not in mapping and -a not in mapping and -b not in mapping:
-                                        if a not in mapping.values() and b not in mapping.values() and -a not in mapping.values() and -b not in mapping.values():
-                                            mapping_ = dict(mapping)
-                                            map(mapping_, b, a)
-                                            map(mapping_, a, b)
-                                            xs__ = apply(mapping_, xs)
-                                            if xs__ == xs:
-                                                mapping = mapping_
-                                                raise ValueError
-                    except ValueError:
-                        continue
-                    found = False
-                    break
-                if found:
-                    found_element = element
-                    break
-            if found:
-                break
-        if found:
-            element = found_element
-            value, r_, _, xs_ = propagate(xs.union(apply(count_mapping, apply(initial_mapping, additional_xs))), set(apply_clause(count_mapping, r)).union({element}))
-            if value is True:
-                r_ = set(apply_clause(inverse_count_mapping, r_))
-                r_ = {inverse_initial_mapping[e] for e in r_}
-                return r_
-            if value is False:
-                assignment = dict(assignment)
-                assignment[inverse_initial_mapping[inverse_count_mapping[element]]] = level + 1
-                t = clause(-f for f in assignment)
-                for x in original_xs.union(additional_xs):
-                    y = resolve(t, x)
-                    if y is not None and len(y) < len(t):
+                    if y not in additional_xs:
                         t = y
-                additional_xs.add(t)
-                update_scores(tuple(-e for e in t))
-                if assignment and t:
-                    lev = assignment[max({e for e in assignment if -e in t}, key=lambda e: assignment[e])]
-                    restart(level=lev)
-                    continue
-                return None
-            scores[inverse_initial_mapping[inverse_count_mapping[element]]] += 2*increment
-            assignment = dict(assignment)
-            assignment[inverse_initial_mapping[inverse_count_mapping[element]]] = level + 1
-            assignments.append(assignment)
-        else:
-            vs = {inverse_initial_mapping[v] for v in vs}
-            v = max(vs, key=lambda v: scores[v])
-            vs = list(u for u in vs if scores[u] >= scores[v])
-            vs = list(count_mapping[initial_mapping[v]] for v in vs)
-            v = max(vs, key=abs)
-            for v in -v, v:
-                value_, r_, _, xs_ = propagate(xs.union(apply(count_mapping, apply(initial_mapping, additional_xs))), set(apply_clause(count_mapping, r)).union({v}))
-                if value_ is True:
-                    r_ = set(apply_clause(inverse_count_mapping, r_))
-                    r_ = {inverse_initial_mapping[e] for e in r_}
-                    return r_
-                if value_ is False:
-                    assignment_v = dict(assignment)
-                    assignment_v[inverse_initial_mapping[inverse_count_mapping[v]]] = level + 1
-                    t = clause(-f for f in assignment_v)
-                    for x in original_xs.union(additional_xs):
-                        y = resolve(t, x)
-                        if y is not None and len(y) < len(t):
-                            t = y
-                    additional_xs.add(t)
-                    update_scores(tuple(-e for e in t))
-                    if assignment_v and t:
-                        lev = assignment_v[max({e for e in assignment_v if -e in t}, key=lambda e: assignment_v[e])]
-                        restart(level=lev)
-                        continue
-                    return None
-                assignment_v = dict(assignment)
-                assignment_v[inverse_initial_mapping[inverse_count_mapping[v]]] = level + 1
-                assignments.append(assignment_v)
+            update_scores(tuple(-e for e in t))
+            additional_xs.add(t)
+            continue
+        found = False
+        if symmetric_elements:
+            for x in sorted(xs, key=len):
+                if not any(e in r for e in x):
+                    if all(v in symmetric_elements for v in x):
+                        x_ = set(x).difference({-e for e in r})
+                        if x_:
+                            vs = {min(x_, key=abs)}
+                            found = True
+                        else:
+                            return None
+        if not found:
+            _, negative_symmetric = preprocess_negative(xs, one=True)
+            for v in negative_symmetric:
+                print(f"found negative symmetric: {v}")
+                vs = {v}
+                break
+        v = max(vs, key=lambda v: scores[abs(v)])
+        vs = list(u for u in vs if scores[abs(u)] >= scores[abs(v)])
+        v = min(vs, key=abs)
+        for v in -v, v:
+            if v not in vs:
+                continue
+            assignment_v = dict(assignment)
+            assignment_v[v] = level + 1
+            assignments.append(assignment_v)
 
 
 def main():
