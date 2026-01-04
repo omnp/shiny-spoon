@@ -77,30 +77,20 @@ def apply(mapping, xs):
 
 
 def preprocess(xs, one=None):
+    from sat import get_literals
     if one is None:
         one = False
     original_xs = set(xs)
-    symmetric_elements = set()
-    symmetric_clauses = set()
-    initial_assignment = {}
-    level = 0
+    symmetric_elements = {}
     while True:
-        level += 1
         xs = original_xs
-        value, r, vs, xs = propagate(xs, set(initial_assignment))
-        if value is True:
-            break
-        if value is False:
-            break
-        found_elements = set()
-        vs.difference_update(symmetric_elements)
-        for element in sorted(vs, key=lambda v: sum(1 if v in x else 0 for x in xs)):
-            if element not in vs:
-                continue
+        vs = get_literals(xs)
+        found_elements = {}
+        for element in sorted(vs.difference(set(symmetric_elements)), key=lambda v: sum(1 if v in x else 0 for x in xs)):
             found = True
             xs_ = {y for y in xs if element in y}
             y = set.union(*(set(y) for y in xs_))
-            for e in set(y).difference({element}).difference(symmetric_elements):
+            for e in set(y).difference({element}):
                 mapping = dict()
                 map(mapping, e, element)
                 map(mapping, element, e)
@@ -109,13 +99,10 @@ def preprocess(xs, one=None):
                 try:
                     for a in connections:
                         for b in connections:
+                            mapping_ = dict(mapping)
                             if abs(a) != abs(b):
-                                mapping_ = dict(mapping)
                                 map(mapping_, b, a)
                                 map(mapping_, a, b)
-                            else:
-                                mapping_ = dict(mapping)
-                                map(mapping_, b, a)
                             m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
                             if n <= m:
                                 n = m
@@ -127,10 +114,7 @@ def preprocess(xs, one=None):
                 found = False
                 break
             if found:
-                found_elements.add(element)
-                found_elements.update(y)
-                vs.difference_update(found_elements)
-                symmetric_clauses.update(xs_)
+                found_elements[element] = set(y)
                 if one:
                     break
         if found_elements:
@@ -139,24 +123,58 @@ def preprocess(xs, one=None):
             break
         if one:
             break
-    return initial_assignment, symmetric_elements, symmetric_clauses
+    return symmetric_elements
+
+
+def preprocess_clauses(xs, one=None):
+    if one is None:
+        one = False
+    symmetric_clauses = {}
+    for x in xs:
+        xs_ = {y for y in xs if len(x) == len(y) and y != x}
+        for y in xs_:
+            mapping = dict()
+            for element, e in zip(x, y):
+                map(mapping, e, element)
+                map(mapping, element, e)
+            connections = get_variables(xs).difference({abs(e) for e in x}).difference({abs(e) for e in y})
+            n = sum(1 if apply_clause(mapping, c) in xs else 0 for c in xs)
+            try:
+                for a in connections:
+                    for b in connections:
+                        mapping_ = dict(mapping)
+                        if a != b:
+                            map(mapping_, a, b)
+                            map(mapping_, b, a)
+                        else:
+                            map(mapping_, b, a)
+                        m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
+                        if n <= m:
+                            n = m
+                            mapping = mapping_
+                        if n >= len(xs):
+                            raise ValueError
+            except ValueError:
+                if x not in symmetric_clauses:
+                    symmetric_clauses[x] = set()
+                symmetric_clauses[x].add(y)
+                if one:
+                    break
+        else:
+            continue
+        break
+    return symmetric_clauses
 
 
 def preprocess_negative(xs, one=None):
+    from sat import get_literals
     if one is None:
         one = False
     original_xs = set(xs)
     symmetric_elements = set()
-    initial_assignment = {}
-    level = 0
     while True:
-        level += 1
         xs = original_xs
-        value, r, vs, xs = propagate(xs, set(initial_assignment))
-        if value is True:
-            break
-        if value is False:
-            break
+        vs = get_literals(xs)
         found_elements = set()
         vs.difference_update(symmetric_elements)
         for element in sorted(vs, key=lambda v: sum(1 if v in x else 0 for x in xs)):
@@ -167,12 +185,11 @@ def preprocess_negative(xs, one=None):
             try:
                 for a in connections:
                     for b in connections:
+                        mapping_ = dict(mapping)
                         if abs(a) != abs(b):
-                            mapping_ = dict(mapping)
                             map(mapping_, b, a)
                             map(mapping_, a, b)
                         else:
-                            mapping_ = dict(mapping)
                             map(mapping_, b, a)
                         m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
                         if n <= m:
@@ -190,12 +207,12 @@ def preprocess_negative(xs, one=None):
             break
         if one:
             break
-    return initial_assignment, symmetric_elements
+    return symmetric_elements
 
 
 @update_additional_clauses
 def symmetry_breaking(xs, additional_xs=None):
-    from sat import exclude, get_literals, resolve
+    from sat import get_literals, resolve
     global counter
     if additional_xs is None:
         additional_xs = set()
@@ -233,8 +250,7 @@ def symmetry_breaking(xs, additional_xs=None):
 
     initial_assignment = {}
     assignments = [dict(initial_assignment)]
-    _, symmetric_elements, _ = preprocess(xs, one=False)
-    _, negative_symmetric = preprocess_negative(xs, one=False)
+    symmetric_elements = preprocess(xs, one=False)
 
     while assignments:
         counter += 1
@@ -243,7 +259,7 @@ def symmetry_breaking(xs, additional_xs=None):
         level = max(assignment.values(), default=0)
         xs = original_xs.union(additional_xs)
         value, r, vs, xs = propagate(xs, set(assignment))
-        print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(xs)}\t{len(assignment)}", end="")
+        print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(assignments)}\t{len(assignment)}", end="")
         if value is True:
             return r
         if value is False:
@@ -253,6 +269,9 @@ def symmetry_breaking(xs, additional_xs=None):
                 value_, _, _, _ = propagate(original_xs.union(additional_xs), set(t_))
                 if value_ is False:
                     t = t_
+            for a in list(assignments):
+                if all(e in a for e in t):
+                    assignments.remove(a)
             t = clause(-f for f in t)
             for x in original_xs.union(additional_xs):
                 y = resolve(t, x)
@@ -262,31 +281,21 @@ def symmetry_breaking(xs, additional_xs=None):
             update_scores(tuple(-e for e in t))
             additional_xs.add(t)
             continue
-        for v in symmetric_elements:
-            if v in vs:
-                if len({abs(e) for e in vs}) > 1:
-                    print(f"found symmetric element {v}")
+        for v in vs:
+            if v in symmetric_elements:
+                print(f"v {v}")
                 vs = {v}
                 break
-        for v in negative_symmetric:
-            if v in vs:
-                if len({abs(e) for e in vs}) > 1:
-                    print(f"found negative symmetric element {v}")
-                vs = {v}
-                break
-        if len(vs) > 1:
-            _, symmetric_elements_, _ = preprocess(xs, one=True)
-            _, negative_symmetric_ = preprocess_negative(xs, one=True)
+        else:
+            symmetric_elements_ = preprocess(xs, one=True)
             for v in symmetric_elements_:
-                if v in vs:
-                    if len({abs(e) for e in vs}) > 1:
-                        print(f"found symmetric element {v}")
-                    vs = {v}
-                    break
-            for v in negative_symmetric_:
-                if v in vs:
-                    if len({abs(e) for e in vs}) > 1:
-                        print(f"found negative symmetric element {v}")
+                print(f"v {v}")
+                vs = {v}
+                break
+            else:
+                negative_symmetric_ = preprocess_negative(xs, one=True)
+                for v in negative_symmetric_:
+                    print(f"v {v}")
                     vs = {v}
                     break
         v = max(vs, key=lambda v: scores[abs(v)])
@@ -300,65 +309,39 @@ def symmetry_breaking(xs, additional_xs=None):
             assignments.append(assignment_v)
 
 
-def main():
-    import sys  # For command line arguments
-    global counter
-    random.seed(1)
-    ratio = 4.27
-    n = 110
-    m = int(math.ceil(n * ratio))
-    k = 3
-    h = 3  # <= Number of satisfying assignments
-
-    from sat import randomize_order, generate_assignment, partials, randomize, resolve
-
-    def random_instance_given_assignments(n, m=None, k=None, assignments=None, clustered=None):
-        """
-        Generates a random instance targeted to have n variables, m clauses,
-        with clause length equal to k.
-        """
-        if clustered is None:
-            clustered = False
-        if assignments is None:
-            assignments = set()
-        if k is None:
-            k = 3
-        if m is None:
-            m = math.inf
-        xs = set()
-        counter = 0
-        limit = 512
-        variables = tuple(range(1, 1 + n))
-        if clustered:
-            clusters = {tuple(range(i, min(1 + n, i + k))) for i in range(1, 1 + n, k)}
-            generators = {}
-            for cluster in clusters:
-                generators[cluster] = partials(cluster)
-            while len(xs) < m:
-                n_ = len(xs)
-                for cluster in generators:
-                    try:
-                        x = next(generators[cluster])
-                        if not any(all(-e in s for e in x) for s in assignments):
-                            if len(xs) < m:
-                                xs.add(x)
-                    except StopIteration:
-                        pass
-                if n_ == len(xs):
-                    counter += 1
-                else:
-                    counter = 0
-                if counter >= limit:
-                    break
-            return variables, xs
+def random_instance_given_assignments(n, m=None, k=None, assignments=None, clustered=None):
+    from sat import randomize_order, partials
+    """
+    Generates a random instance targeted to have n variables, m clauses,
+    with clause length equal to k.
+    """
+    if clustered is None:
+        clustered = False
+    if assignments is None:
+        assignments = set()
+    if k is None:
+        k = 3
+    if m is None:
+        m = math.inf
+    xs = set()
+    counter = 0
+    limit = 512
+    variables = tuple(range(1, 1 + n))
+    if clustered:
+        clusters = {tuple(range(i, min(1 + n, i + k))) for i in range(1, 1 + n, k)}
+        generators = {}
+        for cluster in clusters:
+            generators[cluster] = partials(cluster)
         while len(xs) < m:
             n_ = len(xs)
-            x = clause(
-                    random.choice((1, -1)) * v
-                    for v in randomize_order(variables)[:k]
-                )
-            if not any(all(-e in s for e in x) for s in assignments):
-                xs.add(x)
+            for cluster in generators:
+                try:
+                    x = next(generators[cluster])
+                    if not any(all(-e in s for e in x) for s in assignments):
+                        if len(xs) < m:
+                            xs.add(x)
+                except StopIteration:
+                    pass
             if n_ == len(xs):
                 counter += 1
             else:
@@ -366,66 +349,18 @@ def main():
             if counter >= limit:
                 break
         return variables, xs
-
-    # s = {clause(generate_assignment(n)) for _ in range(h)}
-    # _, xs = random_instance_given_assignments(n, m, k, s)
-    # _, xs = random_instance_given_assignments(n, None, k, s)
-    # _, xs = random_instance_given_assignments(n, None, k, s, clustered=True)
-    # _, xs = random_instance_given_assignments(n, m, k)
-    # _, xs = random_instance_given_assignments(n, None, k)
-    _, xs = random_instance_given_assignments(n, None, k, clustered=True)
-    # import php
-    # xs = php.php(5, 4)
-    # xs = php.php(4, 4)
-    # import waerden
-    # xs = waerden.waerden(3, 5, 21)
-    # xs = waerden.waerden(4, 5, 54)
-    # with open("examples/factoring2017-0006.dimacs") as file:
-        # import dimacs
-        # text = file.read()
-        # _, xs = dimacs.parse_dimacs(text)
-        # xs = {clause(set(x)) for x in xs if not any(-e in x for e in x)}
-    xs = randomize(xs)
-    print(len(xs), len(get_variables(xs)))
-    xs = set(xs)
-    counter = 0
-    total = 0
-    vs = get_variables(xs)
-    rs_ = []
-    additional_xs = set()
-    split = False
-    args = list(sys.argv[1:])
-    if args and "split" in args:
-        args.remove("split")
-        split = True
-
-    while True:
-        counter_ = counter
-        r = symmetry_breaking(xs, additional_xs)
-        if r is not None:
-            r = {e for e in r if abs(e) in vs}
-            for v in vs:
-                if -v not in r:
-                    r.add(v)
-                if v not in r:
-                    r.add(-v)
-            total += 1
-        print("\n\t", r is not None, all(r is None or any(e in r for e in x) for x in xs), counter - counter_, total)
-        if r is None:
+    while len(xs) < m:
+        n_ = len(xs)
+        x = clause(
+                random.choice((1, -1)) * v
+                for v in randomize_order(variables)[:k]
+            )
+        if not any(all(-e in s for e in x) for s in assignments):
+            xs.add(x)
+        if n_ == len(xs):
+            counter += 1
+        else:
+            counter = 0
+        if counter >= limit:
             break
-        r = clause(-e for e in r if abs(e) in vs)
-        if split:
-            r = list(r)
-            random.shuffle(r)
-            r = clause(r[:k])
-        for x in xs:
-            y = resolve(r, x)
-            if y is not None and len(y) < len(r):
-                r = y
-        xs.add(r)
-        if r not in rs_:
-            rs_.append(r)
-
-
-if __name__ == '__main__':
-    main()
+    return variables, xs
