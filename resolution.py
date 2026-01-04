@@ -210,6 +210,39 @@ def preprocess_negative(xs, one=None):
     return symmetric_elements
 
 
+def break_symmetric(xs, symmetric_clauses):
+    m = max(get_variables(xs))
+    mapping = {}
+    for x in symmetric_clauses:
+        if len(x) <= 1:
+            continue
+        for y in symmetric_clauses[x]:
+            for e, f in zip(x, y):
+                m += 1
+                map(mapping, e, m)
+                map(mapping, f, -m)
+    return mapping
+
+
+def multi_invert(mapping):
+    inverse = {}
+    for k, v in mapping.items():
+        if v not in inverse:
+            inverse[v] = set()
+        inverse[v].add(k)
+    return inverse
+
+
+def multi_apply_clause(mapping, x):
+    x = clause(set.union(*(mapping[e] if e in mapping else {e} for e in x)))
+    return x
+
+
+def multi_apply(mapping, xs):
+    xs = {multi_apply_clause(mapping, x) for x in xs}
+    return xs
+
+
 @update_additional_clauses
 def symmetry_breaking(xs, additional_xs=None):
     from sat import get_literals, resolve
@@ -250,7 +283,12 @@ def symmetry_breaking(xs, additional_xs=None):
 
     initial_assignment = {}
     assignments = [dict(initial_assignment)]
-    symmetric_elements = preprocess(xs, one=False)
+    symmetric_clauses = preprocess_clauses(original_xs, one=False)
+    mapping = break_symmetric(original_xs, symmetric_clauses)
+    original_xs = apply(mapping, original_xs)
+    additional_xs = apply(mapping, additional_xs)
+    inverse = multi_invert(mapping)
+    symmetric_elements = preprocess(original_xs.union(additional_xs), one=False)
 
     while assignments:
         counter += 1
@@ -261,6 +299,10 @@ def symmetry_breaking(xs, additional_xs=None):
         value, r, vs, xs = propagate(xs, set(assignment))
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(assignments)}\t{len(assignment)}", end="")
         if value is True:
+            tmp_xs = multi_apply(inverse, additional_xs)
+            additional_xs.clear()
+            additional_xs.update(tmp_xs)
+            r = multi_apply_clause(inverse, r)
             return r
         if value is False:
             t = set(assignment)
@@ -278,7 +320,10 @@ def symmetry_breaking(xs, additional_xs=None):
                 if y is not None and len(y) < len(t):
                     if y not in additional_xs:
                         t = y
-            update_scores(tuple(-e for e in t))
+            if not t:
+                return None
+            up = multi_apply_clause(inverse, {-e for e in t})
+            update_scores({abs(e) for e in up})
             additional_xs.add(t)
             continue
         for v in vs:
@@ -298,9 +343,9 @@ def symmetry_breaking(xs, additional_xs=None):
                     print(f"v {v}")
                     vs = {v}
                     break
-        v = max(vs, key=lambda v: scores[abs(v)])
-        vs = list(u for u in vs if scores[abs(u)] >= scores[abs(v)])
-        v = min(vs, key=abs)
+        v = max(vs, key=lambda v: (scores[abs(min(inverse[v]))] if v in inverse else scores[abs(v)]))
+        vs = list(u for u in vs if (scores[abs(min(inverse[u]))] if u in inverse else scores[abs(u)]) >= (scores[abs(min(inverse[v]))] if v in inverse else scores[abs(v)]))
+        v = max(vs, key=abs)
         for v in -v, v:
             if v not in vs:
                 continue
