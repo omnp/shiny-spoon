@@ -10,12 +10,15 @@ args = list(sys.argv[1:])
 if args and "split" in args:
     args.remove("split")
     split = True
+three = False
+if args and "three" in args:
+    args.remove("three")
+    three = True
 if len(args) > 1:
     m, n = args[0:2]
     m, n = int(m), int(n)
     clauses = php.php(m, n)
     print('PHP:{}x{}'.format(m, n))
-    print(len(clauses))
     variables = sat.get_variables(clauses)
     print(len(clauses), len(variables))
 elif len(args) > 0:
@@ -51,6 +54,9 @@ xs = clauses
 resolution.counter = 0
 total = 0
 vs = sat.get_variables(xs)
+if three:
+    xs = sat.to3(xs)
+    print(len(xs), len(sat.get_variables(xs)))
 rs_ = []
 additional_xs = set()
 k = 3
@@ -59,12 +65,6 @@ while True:
     counter_ = resolution.counter
     r = resolution.symmetry_breaking(xs, additional_xs)
     if r is not None:
-        r = {e for e in r if abs(e) in vs}
-        for v in vs:
-            if -v not in r:
-                r.add(v)
-            if v not in r:
-                r.add(-v)
         total += 1
     print("\n\t", r is not None, all(r is None or any(e in r for e in x) for x in xs), resolution.counter - counter_, total)
     if r is None:
