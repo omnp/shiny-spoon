@@ -100,6 +100,8 @@ def preprocess(xs, one=None):
     vs = set(signatures)
 
     for element in vs:
+        if element in symmetric_elements:
+            continue
         y = inv_sig_cache[sig_cache[element]]
         for e in set(y).difference({element}):
             if sig_cache[element] != sig_cache[e]:
@@ -126,11 +128,13 @@ def preprocess(xs, one=None):
                             raise ValueError
             except ValueError:
                 if element not in symmetric_elements:
-                    symmetric_elements[element] = {element}
+                    symmetric_elements[element] = set()
                 symmetric_elements[element].add(e)
+        if element in symmetric_elements:
+            for e in symmetric_elements[element]:
                 if e not in symmetric_elements:
-                    symmetric_elements[e] = {e}
-                symmetric_elements[e].add(element)
+                    symmetric_elements[e] = set()
+                symmetric_elements[e].update(symmetric_elements[element])
 
     for element in vs:
         e = -element
