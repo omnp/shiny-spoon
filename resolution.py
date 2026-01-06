@@ -104,8 +104,6 @@ def preprocess(xs, one=None):
             continue
         y = inv_sig_cache[sig_cache[element]]
         for e in set(y).difference({element}):
-            if sig_cache[element] != sig_cache[e]:
-                continue
             mapping = dict()
             map(mapping, e, element)
             map(mapping, element, e)
@@ -128,40 +126,15 @@ def preprocess(xs, one=None):
                             raise ValueError
             except ValueError:
                 if element not in symmetric_elements:
-                    symmetric_elements[element] = set()
+                    symmetric_elements[element] = {element}
                 symmetric_elements[element].add(e)
         if element in symmetric_elements:
             for e in symmetric_elements[element]:
-                if e not in symmetric_elements:
-                    symmetric_elements[e] = set()
-                symmetric_elements[e].update(symmetric_elements[element])
-
-    for element in vs:
-        e = -element
-        mapping = dict()
-        map(mapping, e, element)
-        connections = vs.difference({element}).difference({e})
-        n = sum(1 if frozenset(apply_clause(mapping, c)) in xs else 0 for c in xs)
-        try:
-            for a in connections:
-                for b in inv_sig_cache[sig_cache[a]]:
-                    mapping_ = dict(mapping)
-                    if abs(a) != abs(b):
-                        map(mapping_, b, a)
-                        map(mapping_, a, b)
-                    else:
-                        map(mapping_, b, a)
-                    m = sum(1 if frozenset(apply_clause(mapping_, c)) in xs else 0 for c in xs)
-                    if n <= m:
-                        n = m
-                        mapping = mapping_
-                    if n >= len(xs):
-                        raise ValueError
-        except ValueError:
-            if element not in symmetric_elements:
-                symmetric_elements[element] = set()
-            if e not in symmetric_elements[element]:
-                symmetric_elements[element].add(e)
+                symmetric_elements_e = inv_sig_cache[e].intersection(symmetric_elements[element])
+                if symmetric_elements_e:
+                    if e not in symmetric_elements:
+                        symmetric_elements[e] = {e}
+                    symmetric_elements[e].update(symmetric_elements_e)
 
     return symmetric_elements
 
