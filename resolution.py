@@ -76,152 +76,90 @@ def apply(mapping, xs):
     return xs
 
 
+def apply_map(mapping, other):
+    result = {k: other[v] if v in other else v for k, v in mapping.items()}
+    return result
+
+
 def preprocess(xs, one=None):
-    from sat import get_literals
+    from collections import defaultdict
     if one is None:
         one = False
-    original_xs = set(xs)
+    signatures = defaultdict(lambda: defaultdict(int))
+    for c in xs:
+        for lit in c:
+            signatures[lit][len(c)] += 1
+
+    sig_cache = {lit: tuple(sorted(sig.items())) for lit, sig in signatures.items()}
+    inv_sig_cache = defaultdict(lambda: set())
+    for k, v in sig_cache.items():
+        inv_sig_cache[v].add(k)
+
+    xs = set(frozenset(c) for c in xs)
     symmetric_elements = {}
-    while True:
-        xs = original_xs
-        vs = get_literals(xs)
-        found_elements = {}
-        for element in sorted(vs.difference(set(symmetric_elements)), key=lambda v: sum(1 if v in x else 0 for x in xs)):
-            found = True
-            xs_ = {y for y in xs if element in y}
-            y = set.union(*(set(y) for y in xs_))
-            for e in set(y).difference({element}):
-                mapping = dict()
-                map(mapping, e, element)
-                map(mapping, element, e)
-                connections = vs.difference({element}).difference({e})
-                n = sum(1 if apply_clause(mapping, c) in xs else 0 for c in xs)
-                try:
-                    for a in connections:
-                        for b in connections:
-                            mapping_ = dict(mapping)
-                            if abs(a) != abs(b):
-                                map(mapping_, b, a)
-                                map(mapping_, a, b)
-                            m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
-                            if n <= m:
-                                n = m
-                                mapping = mapping_
-                            if n >= len(xs):
-                                raise ValueError
-                except ValueError:
-                    continue
-                found = False
-                break
-            if found:
-                found_elements[element] = set(y)
-                if one:
-                    break
-        if found_elements:
-            symmetric_elements.update(found_elements)
-        else:
-            break
-        if one:
-            break
-    return symmetric_elements
+    vs = set(signatures)
 
-
-def preprocess_clauses(xs, one=None):
-    if one is None:
-        one = False
-    symmetric_clauses = {}
-    for x in xs:
-        xs_ = {y for y in xs if len(x) == len(y) and y != x}
-        for y in xs_:
+    for element in vs:
+        y = inv_sig_cache[sig_cache[element]]
+        for e in set(y).difference({element}):
+            if sig_cache[element] != sig_cache[e]:
+                continue
             mapping = dict()
-            for element, e in zip(x, y):
-                map(mapping, e, element)
-                map(mapping, element, e)
-            connections = get_variables(xs).difference({abs(e) for e in x}).difference({abs(e) for e in y})
-            n = sum(1 if apply_clause(mapping, c) in xs else 0 for c in xs)
+            map(mapping, e, element)
+            map(mapping, element, e)
+            connections = vs.difference({element}).difference({e})
+            n = sum(1 if frozenset(apply_clause(mapping, c)) in xs else 0 for c in xs)
             try:
                 for a in connections:
-                    for b in connections:
-                        mapping_ = dict(mapping)
-                        if a != b:
-                            map(mapping_, a, b)
-                            map(mapping_, b, a)
-                        else:
-                            map(mapping_, b, a)
-                        m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
-                        if n <= m:
-                            n = m
-                            mapping = mapping_
-                        if n >= len(xs):
-                            raise ValueError
-            except ValueError:
-                if x not in symmetric_clauses:
-                    symmetric_clauses[x] = set()
-                symmetric_clauses[x].add(y)
-                if one:
-                    break
-        else:
-            continue
-        break
-    return symmetric_clauses
-
-
-def preprocess_negative(xs, one=None):
-    from sat import get_literals
-    if one is None:
-        one = False
-    original_xs = set(xs)
-    symmetric_elements = set()
-    while True:
-        xs = original_xs
-        vs = get_literals(xs)
-        found_elements = set()
-        vs.difference_update(symmetric_elements)
-        for element in sorted(vs, key=lambda v: sum(1 if v in x else 0 for x in xs)):
-            mapping = dict()
-            map(mapping, -element, element)
-            connections = vs.difference({element}).difference({-element})
-            n = sum(1 if apply_clause(mapping, c) in xs else 0 for c in xs)
-            try:
-                for a in connections:
-                    for b in connections:
+                    for b in inv_sig_cache[sig_cache[a]]:
                         mapping_ = dict(mapping)
                         if abs(a) != abs(b):
                             map(mapping_, b, a)
                             map(mapping_, a, b)
                         else:
                             map(mapping_, b, a)
-                        m = sum(1 if apply_clause(mapping_, c) in xs else 0 for c in xs)
+                        m = sum(1 if frozenset(apply_clause(mapping_, c)) in xs else 0 for c in xs)
                         if n <= m:
                             n = m
                             mapping = mapping_
                         if n >= len(xs):
                             raise ValueError
             except ValueError:
-                found_elements.add(element)
-                if one:
-                    break
-        if found_elements:
-            symmetric_elements.update(found_elements)
-        else:
-            break
-        if one:
-            break
+                if element not in symmetric_elements:
+                    symmetric_elements[element] = {element}
+                symmetric_elements[element].add(e)
+                if e not in symmetric_elements:
+                    symmetric_elements[e] = {e}
+                symmetric_elements[e].add(element)
+
+    for element in vs:
+        e = -element
+        mapping = dict()
+        map(mapping, e, element)
+        connections = vs.difference({element}).difference({e})
+        n = sum(1 if frozenset(apply_clause(mapping, c)) in xs else 0 for c in xs)
+        try:
+            for a in connections:
+                for b in inv_sig_cache[sig_cache[a]]:
+                    mapping_ = dict(mapping)
+                    if abs(a) != abs(b):
+                        map(mapping_, b, a)
+                        map(mapping_, a, b)
+                    else:
+                        map(mapping_, b, a)
+                    m = sum(1 if frozenset(apply_clause(mapping_, c)) in xs else 0 for c in xs)
+                    if n <= m:
+                        n = m
+                        mapping = mapping_
+                    if n >= len(xs):
+                        raise ValueError
+        except ValueError:
+            if element not in symmetric_elements:
+                symmetric_elements[element] = set()
+            if e not in symmetric_elements[element]:
+                symmetric_elements[element].add(e)
+
     return symmetric_elements
-
-
-def break_symmetric(xs, symmetric_clauses):
-    m = max(get_variables(xs))
-    mapping = {}
-    for x in symmetric_clauses:
-        if len(x) <= 1:
-            continue
-        for y in symmetric_clauses[x]:
-            for e, f in zip(x, y):
-                m += 1
-                map(mapping, e, m)
-                map(mapping, f, -m)
-    return mapping
 
 
 def multi_invert(mapping):
@@ -283,12 +221,10 @@ def symmetry_breaking(xs, additional_xs=None):
 
     initial_assignment = {}
     assignments = [dict(initial_assignment)]
-    symmetric_clauses = preprocess_clauses(original_xs, one=False)
-    mapping = break_symmetric(original_xs, symmetric_clauses)
-    original_xs = apply(mapping, original_xs)
-    additional_xs = apply(mapping, additional_xs)
+    mapping = {}
     inverse = multi_invert(mapping)
     symmetric_elements = preprocess(original_xs.union(additional_xs), one=False)
+    print(len(symmetric_elements), sum(len(v) for v in symmetric_elements.values()))
 
     while assignments:
         counter += 1
@@ -328,24 +264,19 @@ def symmetry_breaking(xs, additional_xs=None):
             continue
         for v in vs:
             if v in symmetric_elements:
-                print(f"v {v}")
-                vs = {v}
-                break
-        else:
-            symmetric_elements_ = preprocess(xs, one=True)
-            for v in symmetric_elements_:
-                print(f"v {v}")
-                vs = {v}
-                break
-            else:
-                negative_symmetric_ = preprocess_negative(xs, one=True)
-                for v in negative_symmetric_:
+                if -v in symmetric_elements[v]:
                     print(f"v {v}")
                     vs = {v}
                     break
+        else:
+            for v in list(vs):
+                if v in vs:
+                    if any(e in symmetric_elements and v in symmetric_elements[e] or -e in symmetric_elements and -v in symmetric_elements[-e] for e in r):
+                        if -v in vs:
+                            vs.remove(v)
         v = max(vs, key=lambda v: (scores[abs(min(inverse[v]))] if v in inverse else scores[abs(v)]))
         vs = list(u for u in vs if (scores[abs(min(inverse[u]))] if u in inverse else scores[abs(u)]) >= (scores[abs(min(inverse[v]))] if v in inverse else scores[abs(v)]))
-        v = max(vs, key=abs)
+        v = min(vs, key=abs)
         for v in -v, v:
             if v not in vs:
                 continue
