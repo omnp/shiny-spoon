@@ -250,7 +250,7 @@ def symmetry_breaking(xs, additional_xs=None):
     def restart(level=None):
         nonlocal assignments
         nonlocal initial_assignment
-        if level is None:
+        if level is None or level == 0:
             assignments.clear()
             assignments.append(dict(initial_assignment))
         else:
@@ -300,7 +300,12 @@ def symmetry_breaking(xs, additional_xs=None):
                 return None
             up = multi_apply_clause(inverse, {-e for e in t})
             update_scores({abs(e) for e in up})
+            max_level_in_t = 0
+            for e in t:
+                if -e in assignment:
+                    max_level_in_t = max(max_level_in_t, assignment[-e])
             additional_xs.add(t)
+            restart(level=max_level_in_t)
             continue
         not_symmetric_before_loop = {v for v in vs if v not in symmetric_elements}
         symmetric_elements_loop = dict(symmetric_elements)
