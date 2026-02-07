@@ -143,12 +143,13 @@ def preprocess(xs, targets=None, one=None):
                 if element not in symmetric_elements:
                     symmetric_elements[element] = {element}
                 symmetric_elements[element].add(e)
-                for elem, e in mapping.items():
-                    if e not in symmetric_elements:
-                        symmetric_elements[e] = {e}
-                    symmetric_elements[e].update({elem})
                 if one:
                     break
+        if element in symmetric_elements:
+            for e in symmetric_elements[element]:
+                if e not in symmetric_elements:
+                    symmetric_elements[e] = {e}
+                symmetric_elements[e].update(symmetric_elements[element])
     return symmetric_elements
 
 
@@ -208,9 +209,9 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
         for v in x:
             if v in symmetric_elements:
                 for e in symmetric_elements[v]:
-                    scores[e] += increment
+                    scores[abs(e)] += increment
             else:
-                scores[v] += increment
+                scores[abs(v)] += increment
         increment /= 0.90
         if increment > 1e100:
             for v in scores:
@@ -231,6 +232,7 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
     initial_assignment = {}
     symmetric_elements = {}
     negative_symmetric = {}
+    breaking = set()
     if inprocessing:
         symmetric_elements = preprocess(original_xs.union(additional_xs))
         print("Initial symmetric:", len(symmetric_elements), sum(len(v) for v in symmetric_elements.values()))
@@ -243,7 +245,7 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
         clean(additional_xs)
         assignment = assignments.pop()
         level = max(assignment.values(), default=0)
-        xs = original_xs.union(additional_xs)
+        xs = original_xs.union(additional_xs).union(breaking)
         value, r, vs, xs_ = propagate(xs, set(assignment))
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(assignments)}\t{len(assignment)}", end="")
         if value is True:
@@ -259,15 +261,18 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
                 if all(e in a for e in t):
                     assignments.remove(a)
             t = clause(-e for e in t)
-            for x in original_xs.union(additional_xs):
+            for x in original_xs.union(additional_xs).union(breaking):
                 y = resolve(t, x)
                 if y is not None and len(y) < len(t):
                     if y not in additional_xs:
                         t = y
+            for a in list(assignments):
+                if all(-e in a for e in t):
+                    assignments.remove(a)
             if not t:
                 print("\nResolved empty")
                 return None
-            update_scores({-e for e in t})
+            update_scores(set(t))
             max_level_in_t = 0
             for e in t:
                 if -e in assignment:
@@ -279,15 +284,17 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
         vs_ = set()
         for v in vs:
             if v in symmetric_elements:
-                v = min((e for e in symmetric_elements[v] if -e not in r and e not in r), key=abs)
+                v = min((e for e in symmetric_elements[v] if -e not in r and e not in r))
             if v in negative_symmetric:
-                vs_.add(-abs(v))
+                vs_.add(abs(v))
             else:
-                vs_.add(v)
+                vs_.add(abs(v))
+                vs_.add(-abs(v))
         vs = vs_
-        v = max(vs, key=lambda v: scores[v])
+        v = min(vs, key=abs)
         for v in -v, v:
             if v not in vs:
+                breaking.add(clause({-e for e in set(assignment).union({v})}))
                 continue
             assignment_v = dict(assignment)
             assignment_v[v] = level + 1
