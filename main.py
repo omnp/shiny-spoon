@@ -14,6 +14,14 @@ three = False
 if args and "three" in args:
     args.remove("three")
     three = True
+inprocessing = False
+if args and "inprocess" in args:
+    args.remove("inprocess")
+    inprocessing = True
+one = False
+if args and "one" in args:
+    args.remove("one")
+    one = True
 if len(args) > 1:
     m, n = args[0:2]
     m, n = int(m), int(n)
@@ -49,6 +57,7 @@ else:
     # _, xs = resolution.random_instance_given_assignments(n, None, k)
     _, xs = resolution.random_instance_given_assignments(n, None, k, clustered=True)
     xs = randomize(xs)
+    print(len(xs), len(sat.get_variables(xs)))
     clauses = xs
 xs = clauses
 resolution.counter = 0
@@ -63,7 +72,7 @@ k = 3
 
 while True:
     counter_ = resolution.counter
-    r = resolution.symmetry_breaking(xs, additional_xs)
+    r = resolution.symmetry_breaking(xs, additional_xs, inprocessing=inprocessing, one=one)
     if r is not None:
         total += 1
     print("\n\t", r is not None, all(r is None or any(e in r for e in x) for x in xs), resolution.counter - counter_, total)
