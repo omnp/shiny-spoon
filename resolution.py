@@ -1,4 +1,4 @@
-from sat import clause, get_variables, propagate
+from sat import clause, propagate
 from functools import wraps
 import random
 import math
@@ -98,107 +98,67 @@ def preprocess(xs, targets=None, one=None):
         inv_sig_cache[v].add(k)
 
     xs = set(frozenset(c) for c in xs)
-    clause_signatures = {hash(c) for c in xs}
     symmetric_elements = {}
-    vs = set(signatures)
+    vs = set(sig_cache)
+    clauses = defaultdict(lambda: set())
+    for c in xs:
+        for lit in c:
+            clauses[lit].add(c)
+
+    class IterationError(BaseException):
+        pass
 
     for element in vs.intersection(targets):
         if element in symmetric_elements:
             continue
-        y = inv_sig_cache[sig_cache[element]]
-        for e in set(y).difference({element}):
+        y = inv_sig_cache[sig_cache[element]].intersection(vs).intersection(targets).difference({element, -element})
+        for e in y:
             mapping = dict()
             map(mapping, e, element)
             map(mapping, element, e)
-            connections = vs.difference({element}).difference({e})
-            n = sum(1 if frozenset(apply_clause(mapping, c)) in xs else 0 for c in xs)
-            k = sum(1 if hash(frozenset(apply_clause(mapping, c))) in clause_signatures else 0 for c in xs)
+            connections = y.difference({element, -element})
+            not_clauses = set()
+            for f in mapping:
+                not_clauses.update(clauses[f])
+            n = len(xs) - sum(1 if apply_clause(mapping, c) not in xs else 0 for c in not_clauses)
             try:
                 for a in connections:
-                    for b in inv_sig_cache[sig_cache[a]]:
+                    for b in inv_sig_cache[sig_cache[a]].intersection(connections).difference({a}):
                         mapping_ = dict(mapping)
                         if abs(a) != abs(b):
                             map(mapping_, b, a)
                             map(mapping_, a, b)
                         else:
                             map(mapping_, b, a)
-                        m = sum(1 if hash(frozenset(apply_clause(mapping_, c))) in clause_signatures else 0 for c in xs)
-                        if m < k:
-                            continue
-                        k = m
-                        m = sum(1 if frozenset(apply_clause(mapping_, c)) in xs else 0 for c in xs)
-                        if n <= m:
+                        not_clauses = set()
+                        for f in mapping_:
+                            not_clauses.update(clauses[f])
+                        m = len(xs) - sum(1 if apply_clause(mapping_, c) not in xs else 0 for c in not_clauses)
+                        if n >= m:
                             n = m
                             mapping = mapping_
-                        if n >= len(xs):
-                            raise ValueError
-            except ValueError:
+                        if n <= 0:
+                            raise IterationError
+            except IterationError:
                 if element not in symmetric_elements:
                     symmetric_elements[element] = {element}
                 symmetric_elements[element].add(e)
-        if element in symmetric_elements:
-            for e in symmetric_elements[element]:
-                symmetric_elements_e = inv_sig_cache[e].intersection(symmetric_elements[element])
-                if symmetric_elements_e:
+                for elem, e in mapping.items():
                     if e not in symmetric_elements:
                         symmetric_elements[e] = {e}
-                    symmetric_elements[e].update(symmetric_elements_e)
-            if one:
-                break
-
+                    symmetric_elements[e].update({elem})
+                if one:
+                    break
     return symmetric_elements
 
 
-def preprocess_negative(xs, targets=None):
-    from collections import defaultdict
-    if targets is None:
-        targets = set.union(*(set(c) for c in xs))
-    signatures = defaultdict(lambda: defaultdict(int))
-    for c in xs:
-        for lit in c:
-            signatures[lit][len(c)] += 1
-
-    sig_cache = {lit: tuple(sorted(sig.items())) for lit, sig in signatures.items()}
-    inv_sig_cache = defaultdict(lambda: set())
-    for k, v in sig_cache.items():
-        inv_sig_cache[v].add(k)
-
-    xs = set(frozenset(c) for c in xs)
-    symmetric_elements = {}
-    vs = set(signatures)
-
-    for element in vs.intersection(targets):
-        if element in symmetric_elements:
-            continue
-        e = -element
-        mapping = dict()
-        map(mapping, e, element)
-        connections = vs.difference({element}).difference({e})
-        n = sum(1 if frozenset(apply_clause(mapping, c)) in xs else 0 for c in xs)
-        try:
-            for a in connections:
-                for b in inv_sig_cache[sig_cache[a]]:
-                    mapping_ = dict(mapping)
-                    if abs(a) != abs(b):
-                        map(mapping_, b, a)
-                        map(mapping_, a, b)
-                    else:
-                        map(mapping_, b, a)
-                    m = sum(1 if frozenset(apply_clause(mapping_, c)) in xs else 0 for c in xs)
-                    if n <= m:
-                        n = m
-                        mapping = mapping_
-                    if n >= len(xs):
-                        raise ValueError
-        except ValueError:
-            if element not in symmetric_elements:
-                symmetric_elements[element] = {element}
-            symmetric_elements[element].add(e)
-            if e not in symmetric_elements:
-                symmetric_elements[e] = {e}
-            symmetric_elements[e].add(element)
-
-    return symmetric_elements
+def negative(symmetric_elements):
+    negative_symmetric = {}
+    for elem in symmetric_elements:
+        if -elem in symmetric_elements:
+            if {-e for e in symmetric_elements[elem]} == symmetric_elements[-elem]:
+                negative_symmetric[elem] = {elem, -elem}
+    return negative_symmetric
 
 
 def multi_invert(mapping):
@@ -221,9 +181,14 @@ def multi_apply(mapping, xs):
 
 
 @update_additional_clauses
-def symmetry_breaking(xs, additional_xs=None):
-    from sat import get_literals, resolve
+def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
+    from sat import resolve
+    from collections import defaultdict
     global counter
+    if one is None:
+        one = False
+    if inprocessing is None:
+        inprocessing = False
     if additional_xs is None:
         additional_xs = set()
 
@@ -233,14 +198,19 @@ def symmetry_breaking(xs, additional_xs=None):
         return None
 
     original_xs = set(xs)
-    scores = {v: 0 for v in get_literals(xs)}
+    scores = defaultdict(lambda: 0.0)
     increment = 1
 
     def update_scores(x):
         nonlocal scores
         nonlocal increment
+        nonlocal symmetric_elements
         for v in x:
-            scores[v] += increment
+            if v in symmetric_elements:
+                for e in symmetric_elements[v]:
+                    scores[e] += increment
+            else:
+                scores[v] += increment
         increment /= 0.90
         if increment > 1e100:
             for v in scores:
@@ -259,11 +229,14 @@ def symmetry_breaking(xs, additional_xs=None):
                     assignments.remove(x)
 
     initial_assignment = {}
+    symmetric_elements = {}
+    negative_symmetric = {}
+    if inprocessing:
+        symmetric_elements = preprocess(original_xs.union(additional_xs))
+        print("Initial symmetric:", len(symmetric_elements), sum(len(v) for v in symmetric_elements.values()))
+        negative_symmetric.update(negative(symmetric_elements))
+        print("Negative symmetric:", len(negative_symmetric), sum(len(v) for v in negative_symmetric.values()))
     assignments = [dict(initial_assignment)]
-    mapping = {}
-    inverse = multi_invert(mapping)
-    symmetric_elements = preprocess(original_xs.union(additional_xs), one=False)
-    print("Initial symmetric:", len(symmetric_elements), sum(len(v) for v in symmetric_elements.values()))
 
     while assignments:
         counter += 1
@@ -271,25 +244,21 @@ def symmetry_breaking(xs, additional_xs=None):
         assignment = assignments.pop()
         level = max(assignment.values(), default=0)
         xs = original_xs.union(additional_xs)
-        value, r, vs, xs = propagate(xs, set(assignment))
+        value, r, vs, xs_ = propagate(xs, set(assignment))
         print(f"\x1b[2K\r\t{counter}\t{len(additional_xs)}\t{len(assignments)}\t{len(assignment)}", end="")
         if value is True:
-            tmp_xs = multi_apply(inverse, additional_xs)
-            additional_xs.clear()
-            additional_xs.update(tmp_xs)
-            r = multi_apply_clause(inverse, r)
             return r
         if value is False:
             t = set(assignment)
             for e in reversed(list(t)):
                 t_ = t.difference({e})
-                value_, _, _, _ = propagate(original_xs.union(additional_xs), set(t_))
+                value_, _, _, _ = propagate(xs, set(t_))
                 if value_ is False:
                     t = t_
             for a in list(assignments):
                 if all(e in a for e in t):
                     assignments.remove(a)
-            t = clause(-f for f in t)
+            t = clause(-e for e in t)
             for x in original_xs.union(additional_xs):
                 y = resolve(t, x)
                 if y is not None and len(y) < len(t):
@@ -298,34 +267,25 @@ def symmetry_breaking(xs, additional_xs=None):
             if not t:
                 print("\nResolved empty")
                 return None
-            up = multi_apply_clause(inverse, {-e for e in t})
-            update_scores({abs(e) for e in up})
+            update_scores({-e for e in t})
             max_level_in_t = 0
             for e in t:
                 if -e in assignment:
                     max_level_in_t = max(max_level_in_t, assignment[-e])
             additional_xs.add(t)
-            restart(level=max_level_in_t)
+            if max_level_in_t > 0:
+                restart(level=max_level_in_t)
             continue
-        not_symmetric_before_loop = {v for v in vs if v not in symmetric_elements}
-        symmetric_elements_loop = dict(symmetric_elements)
-        symmetric_elements_loop.update(preprocess(xs, targets=not_symmetric_before_loop, one=False))
-        symmetric_elements_loop = {v: w for v, w in symmetric_elements_loop.items() if v in vs}
-        print("\n\tLoop symmetric:", len(symmetric_elements_loop), sum(len(v) for v in symmetric_elements_loop.values()))
         vs_ = set()
         for v in vs:
-            if v in symmetric_elements_loop:
-                v = max({e for e in symmetric_elements_loop[v] if -e not in r and e not in r}, key=abs)
-                negative_symmetric = preprocess_negative(xs, targets={v})
-                neg = v not in negative_symmetric
-                if -v not in vs_:
-                    vs_.add(v)
-                    if neg:
-                        vs_.add(-v)
-        vs = vs_.union({v for v in vs if v not in symmetric_elements_loop})
-        v = max(vs, key=lambda v: (scores[abs(min(inverse[v]))] if v in inverse else scores[abs(v)]))
-        vs = list(u for u in vs if (scores[abs(min(inverse[u]))] if u in inverse else scores[abs(u)]) >= (scores[abs(min(inverse[v]))] if v in inverse else scores[abs(v)]))
-        v = max(vs, key=abs)
+            if v in symmetric_elements:
+                v = min((e for e in symmetric_elements[v] if -e not in r and e not in r), key=abs)
+            if v in negative_symmetric:
+                vs_.add(-abs(v))
+            else:
+                vs_.add(v)
+        vs = vs_
+        v = max(vs, key=lambda v: scores[v])
         for v in -v, v:
             if v not in vs:
                 continue
