@@ -304,7 +304,7 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
                 else:
                     vs_.add(abs(v))
                     vs_.add(-abs(v))
-                vs = vs_
+            vs = vs_
         v = min(vs, key=abs)
         for v in -v, v:
             if v not in vs:
