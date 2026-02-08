@@ -109,17 +109,19 @@ def preprocess(xs, targets=None):
     for element in vs.intersection(targets):
         if element in symmetric_elements:
             continue
-        y = inv_sig_cache[sig_cache[element]].intersection(vs).intersection(targets).difference({element, -element})
+        y = inv_sig_cache[sig_cache[element]].intersection(vs).intersection(targets).difference({element})
         for e in y:
             mapping = dict()
             map(mapping, e, element)
             map(mapping, element, e)
-            connections = y.difference({element, -element})
+            connections = y.difference({element})
             not_clauses = set()
             for f in mapping:
                 not_clauses.update(clauses[f])
             n = len(xs) - sum(1 if apply_clause(mapping, c) not in xs else 0 for c in not_clauses)
             try:
+                if n <= 0:
+                    raise IterationError
                 for a in connections:
                     if a in mapping:
                         continue
@@ -207,9 +209,9 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
         for v in x:
             if v in symmetric_elements:
                 for e in symmetric_elements[v]:
-                    scores[abs(e)] += increment
+                    scores[e] += increment
             else:
-                scores[abs(v)] += increment
+                scores[v] += increment
         increment /= 0.90
         if increment > 1e100:
             for v in scores:
@@ -234,7 +236,7 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
     if preprocessing:
         symmetric_elements = preprocess(original_xs.union(additional_xs))
         print("Initial symmetric:", len(symmetric_elements), sum(len(v) for v in symmetric_elements.values()))
-        negative_symmetric.update(negative(symmetric_elements))
+        negative_symmetric = negative(symmetric_elements)
         print("Negative symmetric:", len(negative_symmetric), sum(len(v) for v in negative_symmetric.values()))
     assignments = [dict(initial_assignment)]
 
@@ -270,7 +272,7 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
             if not t:
                 print("\nResolved empty")
                 return None
-            update_scores(set(t))
+            update_scores(-e for e in t)
             max_level_in_t = 0
             for e in t:
                 if -e in assignment:
@@ -305,6 +307,12 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
                     vs_.add(abs(v))
                     vs_.add(-abs(v))
             vs = vs_
+        v = max(vs, key=lambda v: scores[v])
+        vs_ = {u for u in vs if scores[u] >= scores[v]}
+        for u in list(vs_):
+            if -u in vs and -u not in vs_:
+                vs_.add(-u)
+        vs = vs_
         v = min(vs, key=abs)
         for v in -v, v:
             if v not in vs:
