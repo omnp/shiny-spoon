@@ -81,10 +81,8 @@ def apply_map(mapping, other):
     return result
 
 
-def preprocess(xs, targets=None, one=None):
+def preprocess(xs, targets=None):
     from collections import defaultdict
-    if one is None:
-        one = False
     if targets is None:
         targets = set.union(*(set(c) for c in xs))
     signatures = defaultdict(lambda: defaultdict(int))
@@ -145,8 +143,6 @@ def preprocess(xs, targets=None, one=None):
                 if element not in symmetric_elements:
                     symmetric_elements[element] = {element}
                 symmetric_elements[element].add(e)
-                if one:
-                    break
         if element in symmetric_elements:
             for e in symmetric_elements[element]:
                 if e not in symmetric_elements:
@@ -184,14 +180,14 @@ def multi_apply(mapping, xs):
 
 
 @update_additional_clauses
-def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
+def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=None):
     from sat import resolve
     from collections import defaultdict
     global counter
-    if one is None:
-        one = False
     if inprocessing is None:
         inprocessing = False
+    if preprocessing is None:
+        preprocessing = False
     if additional_xs is None:
         additional_xs = set()
 
@@ -235,7 +231,7 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
     symmetric_elements = {}
     negative_symmetric = {}
     breaking = set()
-    if inprocessing:
+    if preprocessing:
         symmetric_elements = preprocess(original_xs.union(additional_xs))
         print("Initial symmetric:", len(symmetric_elements), sum(len(v) for v in symmetric_elements.values()))
         negative_symmetric.update(negative(symmetric_elements))
@@ -293,6 +289,22 @@ def symmetry_breaking(xs, additional_xs=None, inprocessing=None, one=None):
                 vs_.add(abs(v))
                 vs_.add(-abs(v))
         vs = vs_
+        if inprocessing:
+            symmetric_elements_ = preprocess(xs_)
+            print("\n\tSymmetric (loop):", len(symmetric_elements_), sum(len(v) for v in symmetric_elements_.values()))
+            negative_symmetric_ = negative(symmetric_elements_)
+            print("\tNegative symmetric (loop):", len(negative_symmetric_), sum(len(v) for v in negative_symmetric_.values()))
+            negative_symmetric_ = dict(list(negative_symmetric_.items()) + list(negative_symmetric.items()))
+            vs_ = set()
+            for v in vs:
+                if v in symmetric_elements_:
+                    v = min((e for e in symmetric_elements_[v] if -e not in r and e not in r))
+                if v in negative_symmetric_:
+                    vs_.add(abs(v))
+                else:
+                    vs_.add(abs(v))
+                    vs_.add(-abs(v))
+                vs = vs_
         v = min(vs, key=abs)
         for v in -v, v:
             if v not in vs:
