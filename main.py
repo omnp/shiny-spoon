@@ -18,10 +18,10 @@ inprocessing = False
 if args and "inprocess" in args:
     args.remove("inprocess")
     inprocessing = True
-one = False
-if args and "one" in args:
-    args.remove("one")
-    one = True
+preprocessing = False
+if args and "preprocess" in args:
+    args.remove("preprocess")
+    preprocessing = True
 if len(args) > 1:
     m, n = args[0:2]
     m, n = int(m), int(n)
@@ -72,7 +72,7 @@ k = 3
 
 while True:
     counter_ = resolution.counter
-    r = resolution.symmetry_breaking(xs, additional_xs, inprocessing=inprocessing, one=one)
+    r = resolution.symmetry_breaking(xs, additional_xs, preprocessing=preprocessing, inprocessing=inprocessing)
     if r is not None:
         total += 1
     print("\n\t", r is not None, all(r is None or any(e in r for e in x) for x in xs), resolution.counter - counter_, total)
