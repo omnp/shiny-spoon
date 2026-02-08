@@ -123,7 +123,9 @@ def preprocess(xs, targets=None, one=None):
             n = len(xs) - sum(1 if apply_clause(mapping, c) not in xs else 0 for c in not_clauses)
             try:
                 for a in connections:
-                    for b in inv_sig_cache[sig_cache[a]].intersection(connections).difference({a}):
+                    if a in mapping:
+                        continue
+                    for b in inv_sig_cache[sig_cache[a]].intersection(connections).difference({a}).difference(mapping):
                         mapping_ = dict(mapping)
                         if abs(a) != abs(b):
                             map(mapping_, b, a)
