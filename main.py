@@ -7,21 +7,31 @@ import resolution
 random.seed(1)
 split = False
 args = list(sys.argv[1:])
-if args and "split" in args:
+if "split" in args:
     args.remove("split")
     split = True
 three = False
-if args and "three" in args:
+if "three" in args:
     args.remove("three")
     three = True
 inprocessing = False
-if args and "inprocess" in args:
+if "inprocess" in args:
     args.remove("inprocess")
     inprocessing = True
 preprocessing = False
-if args and "preprocess" in args:
+if "preprocess" in args:
     args.remove("preprocess")
     preprocessing = True
+randomize = False
+if "randomize" in args:
+    args.remove("randomize")
+    randomize = True
+if "seed" in args:
+    index = args.index("seed")
+    seed = int(args[index + 1])
+    random.seed(seed)
+    args.pop(index + 1)
+    args.pop(index)
 if len(args) > 1:
     m, n = args[0:2]
     m, n = int(m), int(n)
@@ -41,14 +51,13 @@ elif len(args) > 0:
         print('k', max(len(c) for c in clauses))
 else:
     import math
-    random.seed(1)
     ratio = 4.27
     n = 110
     m = int(math.ceil(n * ratio))
     k = 3
     h = 3  # <= Number of satisfying assignments
 
-    from sat import generate_assignment, randomize
+    from sat import generate_assignment
     # s = {sat.clause(generate_assignment(n)) for _ in range(h)}
     # _, xs = resolution.random_instance_given_assignments(n, m, k, s)
     # _, xs = resolution.random_instance_given_assignments(n, None, k, s)
@@ -56,10 +65,11 @@ else:
     # _, xs = resolution.random_instance_given_assignments(n, m, k)
     # _, xs = resolution.random_instance_given_assignments(n, None, k)
     _, xs = resolution.random_instance_given_assignments(n, None, k, clustered=True)
-    xs = randomize(xs)
     print(len(xs), len(sat.get_variables(xs)))
     clauses = xs
 xs = clauses
+if randomize:
+    xs = sat.randomize(xs)
 resolution.counter = 0
 total = 0
 vs = sat.get_variables(xs)
