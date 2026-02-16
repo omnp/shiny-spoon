@@ -139,7 +139,7 @@ def preprocess(xs, targets=None):
                         if n >= m:
                             n = m
                             mapping = mapping_
-                        if n <= 0:
+                        if n <= max(0, len(xs) - 2):
                             raise IterationError
             except IterationError:
                 if element not in symmetric_elements:
@@ -157,7 +157,7 @@ def negative(symmetric_elements):
     negative_symmetric = {}
     for elem in symmetric_elements:
         if -elem in symmetric_elements:
-            if {-e for e in symmetric_elements[elem]} == symmetric_elements[-elem]:
+            if elem in symmetric_elements[-elem] or {-e for e in symmetric_elements[elem]} == symmetric_elements[-elem]:
                 negative_symmetric[elem] = {elem, -elem}
     return negative_symmetric
 
@@ -251,6 +251,7 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
         if value is True:
             return r
         if value is False:
+            additional_xs.add(clause({-e for e in assignment}))
             t = set(assignment)
             for e in reversed(list(t)):
                 t_ = t.difference({e})
@@ -273,13 +274,13 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
                 print("\nResolved empty")
                 return None
             update_scores(-e for e in t)
-            max_level_in_t = 0
-            for e in t:
-                if -e in assignment:
-                    max_level_in_t = max(max_level_in_t, assignment[-e])
-            additional_xs.add(t)
-            if max_level_in_t > 0:
-                restart(level=max_level_in_t)
+            # max_level_in_t = 0
+            # for e in t:
+            #     if -e in assignment:
+            #         max_level_in_t = max(max_level_in_t, assignment[-e])
+            # additional_xs.add(t)
+            # if max_level_in_t > 0:
+            #     restart(level=max_level_in_t)
             continue
         vs_ = set()
         for v in vs:
