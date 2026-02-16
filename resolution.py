@@ -251,7 +251,6 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
         if value is True:
             return r
         if value is False:
-            additional_xs.add(clause({-e for e in assignment}))
             t = set(assignment)
             for e in reversed(list(t)):
                 t_ = t.difference({e})
@@ -274,13 +273,13 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
                 print("\nResolved empty")
                 return None
             update_scores(-e for e in t)
-            # max_level_in_t = 0
-            # for e in t:
-            #     if -e in assignment:
-            #         max_level_in_t = max(max_level_in_t, assignment[-e])
-            # additional_xs.add(t)
-            # if max_level_in_t > 0:
-            #     restart(level=max_level_in_t)
+            max_level_in_t = 0
+            for e in t:
+                if -e in assignment:
+                    max_level_in_t = max(max_level_in_t, assignment[-e])
+            additional_xs.add(t)
+            if max_level_in_t > 0:
+                restart(level=max_level_in_t)
             continue
         vs_ = set()
         for v in vs:
@@ -314,10 +313,10 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
             if -u in vs and -u not in vs_:
                 vs_.add(-u)
         vs = vs_
-        v = min(vs, key=abs)
+        v = min(vs)
         for v in -v, v:
             if v not in vs:
-                breaking.add(clause({-e for e in set(assignment).union({v})}))
+                breaking.add(clause({-v}))
                 continue
             assignment_v = dict(assignment)
             assignment_v[v] = level + 1
