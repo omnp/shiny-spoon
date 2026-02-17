@@ -331,7 +331,7 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
         v = min(vs)
         for v in -v, v:
             if v not in vs:
-                breaking.add(clause({-v}))
+                breaking.add(clause({-v}.union(assignment)))
                 continue
             assignment_v = dict(assignment)
             assignment_v[v] = level + 1
