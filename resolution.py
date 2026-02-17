@@ -148,17 +148,24 @@ def preprocess(xs, targets=None):
         if element in symmetric_elements:
             for e in symmetric_elements[element]:
                 if e not in symmetric_elements:
-                    symmetric_elements[e] = {e}
-                symmetric_elements[e].update(symmetric_elements[element])
+                    symmetric_elements[e] = {element}
     return symmetric_elements
 
 
 def negative(symmetric_elements):
     negative_symmetric = {}
     for elem in symmetric_elements:
+        symmetric = symmetric_elements[elem]
+        for e in list(symmetric):
+            symmetric.update(symmetric_elements[e])
+            break
         if -elem in symmetric_elements:
-            if elem in symmetric_elements[-elem] or {-e for e in symmetric_elements[elem]} == symmetric_elements[-elem]:
-                negative_symmetric[elem] = {elem, -elem}
+            not_symmetric = symmetric_elements[-elem]
+            for e in list(not_symmetric):
+                not_symmetric.update(symmetric_elements[e])
+                break
+            if elem in not_symmetric or all(-e in symmetric for e in not_symmetric):
+                negative_symmetric[elem] = {-elem}
     return negative_symmetric
 
 
@@ -284,7 +291,11 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
         vs_ = set()
         for v in vs:
             if v in symmetric_elements:
-                v = min((e for e in symmetric_elements[v] if -e not in r and e not in r))
+                symmetric = symmetric_elements[v]
+                for e in list(symmetric):
+                    symmetric.update(symmetric_elements[e])
+                    break
+                v = min((e for e in symmetric if -e not in r and e not in r))
             if v in negative_symmetric:
                 vs_.add(abs(v))
             else:
@@ -300,7 +311,11 @@ def symmetry_breaking(xs, additional_xs=None, preprocessing=None, inprocessing=N
             vs_ = set()
             for v in vs:
                 if v in symmetric_elements_:
-                    v = min((e for e in symmetric_elements_[v] if -e not in r and e not in r))
+                    symmetric_ = symmetric_elements_[v]
+                    for e in list(symmetric_):
+                        symmetric_.update(symmetric_elements_[e])
+                        break
+                    v = min((e for e in symmetric_ if -e not in r and e not in r))
                 if v in negative_symmetric_:
                     vs_.add(abs(v))
                 else:
